@@ -31,9 +31,15 @@ function applyForm(form) {
   }
 }
 
+let customIdleUrl = null;
+let customWalkUrl = null;
+
 function loadCustomImage() {
-  window.api.getCustomImage().then((url) => {
-    if (url) photo.src = url;
+  window.api.getCustomFrames().then((frames) => {
+    if (!frames) return;
+    customIdleUrl = frames.idle;
+    customWalkUrl = frames.walk || frames.idle;
+    if (customIdleUrl) photo.src = customIdleUrl;
   });
 }
 
@@ -150,7 +156,81 @@ menu.addEventListener('click', (e) => {
 // ---------- 来自主进程的事件 ----------
 window.api.onFormChanged((form) => applyForm(form));
 window.api.onPetSay((msg) => say(msg.text, msg.mood || 'normal'));
-window.api.onCustomImageChanged((url) => { if (url) photo.src = url; });
+window.api.onCustomImageChanged(() => loadCustomImage());
 
 // 初始化
 window.api.getState().then((s) => applyForm(s.form || 'custom'));
+
+// ---------- 小范围跑动（仅自定义形态） ----------
+let home = null;        // 游走的锚点（屏幕坐标）
+let cur = null;         // 当前窗口坐标（本地缓存）
+let wandering = false;
+let wanderTimer = null;
+
+async function ensurePos() {
+  const p = await window.api.getWinPos();
+  if (!home) home = { x: p.x, y: p.y };
+  cur = { x: p.x, y: p.y };
+}
+
+function setWalkFrame(on) {
+  if (on) {
+    pet.classList.add('walking');
+    if (customWalkUrl) photo.src = customWalkUrl;
+  } else {
+    pet.classList.remove('walking');
+    if (customIdleUrl) photo.src = customIdleUrl;
+  }
+}
+
+function scheduleWander() {
+  clearTimeout(wanderTimer);
+  const delay = 3500 + Math.random() * 5000;
+  wanderTimer = setTimeout(startWander, delay);
+}
+
+async function startWander() {
+  if (currentForm !== 'custom' || dragging) { scheduleWander(); return; }
+  await ensurePos();
+  // 在锚点附近的小范围内选一个目标
+  const target = {
+    x: home.x + Math.round((Math.random() * 2 - 1) * 90),
+    y: home.y + Math.round((Math.random() * 2 - 1) * 36)
+  };
+  const dx = target.x - cur.x;
+  if (Math.abs(dx) < 6 && Math.abs(target.y - cur.y) < 6) { scheduleWander(); return; }
+  pet.classList.toggle('face-left', dx < 0);
+  wandering = true;
+  setWalkFrame(true);
+  stepTo(target);
+}
+
+function stepTo(target) {
+  if (dragging || currentForm !== 'custom') { stopWander(); return; }
+  const dx = target.x - cur.x;
+  const dy = target.y - cur.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 2) { stopWander(); return; }
+  const speed = 1.6;
+  cur.x += dx / dist * Math.min(speed, dist);
+  cur.y += dy / dist * Math.min(speed, dist);
+  window.api.setWinPos(cur.x, cur.y);
+  requestAnimationFrame(() => stepTo(target));
+}
+
+function stopWander() {
+  wandering = false;
+  setWalkFrame(false);
+  scheduleWander();
+}
+
+// 拖拽结束后把锚点更新为新位置，并重新计划游走
+window.addEventListener('mouseup', () => {
+  setTimeout(async () => {
+    const p = await window.api.getWinPos();
+    home = { x: p.x, y: p.y };
+    cur = { x: p.x, y: p.y };
+  }, 60);
+});
+
+scheduleWander();

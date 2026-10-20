@@ -40,7 +40,7 @@ html, body {
   transform-origin: bottom center;
 }
 
-/* ---------- 自定义图片（3D 立牌效果） ---------- */
+/* ---------- 自定义图片（3D 立体效果 + 可行走） ---------- */
 .pet-photo-wrap {
   perspective: 650px;
   display: flex;
@@ -49,38 +49,47 @@ html, body {
   height: 140px;
 }
 .pet-photo-img {
-  width: 118px;
-  height: 118px;
-  object-fit: cover;
-  border-radius: 22px;
-  border: 3px solid rgba(255,255,255,0.9);
+  width: 120px;
+  height: auto;
+  max-height: 130px;
+  object-fit: contain;
   transform-style: preserve-3d;
-  /* 多层投影营造立体悬浮感 */
-  box-shadow:
-    0 2px 2px rgba(0,0,0,0.12),
-    0 10px 16px rgba(0,0,0,0.28),
-    0 22px 30px rgba(0,0,0,0.22);
-  animation: float3d 4s ease-in-out infinite;
+  /* 透明图直接用 drop-shadow 贴合轮廓，营造立体悬浮/站立感 */
+  filter:
+    drop-shadow(0 6px 4px rgba(0,0,0,0.28))
+    drop-shadow(0 2px 1px rgba(0,0,0,0.18));
+  animation: float3d 3.6s ease-in-out infinite;
   will-change: transform;
+  transform-origin: bottom center;
 }
+/* 朝向翻转 */
+#pet.face-left .pet-photo-img { transform: scaleX(-1); }
+
 @keyframes float3d {
-  0%   { transform: translateY(0)    rotateX(6deg)  rotateY(-10deg); }
-  25%  { transform: translateY(-6px) rotateX(3deg)  rotateY(0deg); }
-  50%  { transform: translateY(-10px) rotateX(0deg) rotateY(10deg); }
-  75%  { transform: translateY(-6px) rotateX(3deg)  rotateY(0deg); }
-  100% { transform: translateY(0)    rotateX(6deg)  rotateY(-10deg); }
+  0%   { transform: translateY(0)    rotateY(-8deg); }
+  50%  { transform: translateY(-7px) rotateY(8deg); }
+  100% { transform: translateY(0)    rotateY(-8deg); }
 }
+/* 行走时的摇摆（走路waddle） */
+#pet.walking .pet-photo-img { animation: walkWaddle 0.4s ease-in-out infinite; }
+#pet.walking.face-left .pet-photo-img { animation: walkWaddleL 0.4s ease-in-out infinite; }
+@keyframes walkWaddle {
+  0%,100% { transform: translateY(0) rotate(-4deg); }
+  50%     { transform: translateY(-5px) rotate(4deg); }
+}
+@keyframes walkWaddleL {
+  0%,100% { transform: scaleX(-1) translateY(0) rotate(4deg); }
+  50%     { transform: scaleX(-1) translateY(-5px) rotate(-4deg); }
+}
+
 /* 自定义形态下隐藏 emoji 脸；非自定义形态隐藏照片 */
 #pet.form-custom .pet-face { display: none; }
 #pet:not(.form-custom) .pet-photo-wrap { display: none; }
-#pet.form-custom .pet-shadow { width: 92px; height: 16px; margin-top: 2px; }
-/* 情绪：开心放大、警告抖动（作用于照片） */
-#pet.form-custom.mood-happy .pet-photo-img { animation: float3dHappy 1.2s ease-in-out infinite; }
-#pet.form-custom.mood-alert .pet-photo-img { animation: float3dAlert 0.3s ease-in-out infinite; }
-@keyframes float3dHappy {
-  0%,100% { transform: translateY(-6px) rotateY(-12deg) scale(1.03); }
-  50%     { transform: translateY(-14px) rotateY(12deg) scale(1.06); }
+#pet.form-custom .pet-shadow {
+  width: 86px; height: 16px; margin-top: -4px;
+  background: rgba(0,0,0,0.22);
 }
+#pet.form-custom.mood-alert .pet-photo-img { animation: float3dAlert 0.3s ease-in-out infinite; }
 @keyframes float3dAlert {
   0%,100% { transform: translateX(-4px) rotateY(-6deg); }
   50%     { transform: translateX(4px) rotateY(6deg); }
