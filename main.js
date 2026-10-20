@@ -464,8 +464,10 @@ function openPanel() {
 
 // ---------- 托盘 ----------
 function buildTray() {
-  // 使用真实图标，否则菜单栏看不到、无法点击
+  // 状态栏小猫头图标（含 2x 高清版本）
   let icon = nativeImage.createFromPath(path.join(__dirname, 'assets', 'tray.png'));
+  const icon2x = nativeImage.createFromPath(path.join(__dirname, 'assets', 'tray@2x.png'));
+  if (!icon2x.isEmpty()) icon.addRepresentation({ scaleFactor: 2, buffer: icon2x.toPNG() });
   if (icon.isEmpty()) icon = nativeImage.createFromPath(path.join(__dirname, 'assets', 'icon.png'));
   tray = new Tray(icon);
   tray.setToolTip('零度突破 · 桌宠小助手');
