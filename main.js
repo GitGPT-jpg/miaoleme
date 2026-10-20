@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, Notification, screen, nativeImage, globalShortcut } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, Notification, screen, nativeImage, globalShortcut, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -6,7 +6,8 @@ const fs = require('fs');
 const STORE_FILE = path.join(app.getPath('userData'), 'zerobreak-store.json');
 
 const DEFAULT_STATE = {
-  form: 'cat',            // cat | robot | slime
+  form: 'custom',         // cat | robot | slime | custom（自定义图片）
+  customImage: null,      // 用户上传的自定义图片绝对路径（为空则用内置猫咪）
   water: {
     enabled: true,
     intervalMin: 45,      // 每隔多少分钟提醒喝水
@@ -72,6 +73,31 @@ function saveState() {
 }
 
 let state = loadState();
+
+// ---------- 自定义图片 ----------
+const BUNDLED_PHOTO = path.join(__dirname, 'assets', 'pet-photo.jpg');
+
+function customImagePath() {
+  if (state.customImage && fs.existsSync(state.customImage)) return state.customImage;
+  if (fs.existsSync(BUNDLED_PHOTO)) return BUNDLED_PHOTO;
+  return null;
+}
+
+function customImageDataUrl() {
+  const p = customImagePath();
+  if (!p) return null;
+  try {
+    const ext = path.extname(p).toLowerCase().replace('.', '');
+    const mime = ext === 'png' ? 'image/png'
+      : ext === 'gif' ? 'image/gif'
+      : ext === 'webp' ? 'image/webp'
+      : 'image/jpeg';
+    return `data:${mime};base64,${fs.readFileSync(p).toString('base64')}`;
+  } catch (e) {
+    return null;
+  }
+}
+
 
 // ---------- 窗口 ----------
 let petWin = null;
@@ -183,13 +209,13 @@ function buildTray() {
 }
 
 function refreshTrayMenu() {
-  const formLabel = { cat: '🐱 猫', robot: '🤖 机器人', slime: '🟢 史莱姆' };
+  const formLabel = { cat: '🐱 猫', robot: '🤖 机器人', slime: '🟢 史莱姆', custom: '📷 自定义图片' };
   const menu = Menu.buildFromTemplate([
     { label: '打开控制台  (⌘/Ctrl+⇧+P)', click: openPanel },
     { type: 'separator' },
     {
       label: '切换形态',
-      submenu: ['cat', 'robot', 'slime'].map((f) => ({
+      submenu: ['custom', 'cat', 'robot', 'slime'].map((f) => ({
         label: formLabel[f],
         type: 'radio',
         checked: state.form === f,
@@ -233,7 +259,10 @@ function setForm(form) {
   state.form = form;
   saveState();
   refreshTrayMenu();
-  if (petWin) petWin.webContents.send('form-changed', form);
+  if (petWin) {
+    petWin.webContents.send('form-changed', form);
+    if (form === 'custom') petWin.webContents.send('custom-image-changed', customImageDataUrl());
+  }
   if (panelWin) panelWin.webContents.send('state-updated', publicState());
 }
 
@@ -381,6 +410,7 @@ function stopPomodoro(silent) {
 function publicState() {
   return {
     form: state.form,
+    hasCustomImage: !!customImagePath(),
     water: state.water,
     sit: state.sit,
     pomodoro: state.pomodoro,
@@ -401,6 +431,35 @@ function uid() {
 ipcMain.handle('get-state', () => publicState());
 
 ipcMain.handle('set-form', (e, form) => { setForm(form); return publicState(); });
+
+// 自定义图片：读取当前图片为 dataURL（受 CSP 限制，用 data: 而非 file://）
+ipcMain.handle('get-custom-image', () => customImageDataUrl());
+
+// 上传自定义图片：打开文件选择框，复制到 userData 后记忆
+ipcMain.handle('upload-custom-image', async () => {
+  const res = await dialog.showOpenDialog({
+    title: '选择桌宠图片',
+    properties: ['openFile'],
+    filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }]
+  });
+  if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false };
+  try {
+    const src = res.filePaths[0];
+    const ext = path.extname(src).toLowerCase() || '.png';
+    const dest = path.join(app.getPath('userData'), 'pet-custom' + ext);
+    fs.copyFileSync(src, dest);
+    state.customImage = dest;
+    state.form = 'custom';
+    saveState();
+    refreshTrayMenu();
+    const url = customImageDataUrl();
+    if (petWin) { petWin.webContents.send('form-changed', 'custom'); petWin.webContents.send('custom-image-changed', url); }
+    if (panelWin) panelWin.webContents.send('state-updated', publicState());
+    return { ok: true, dataUrl: url };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
 
 ipcMain.handle('set-water', (e, cfg) => {
   const c = cfg || {};

@@ -1,12 +1,14 @@
 const pet = document.getElementById('pet');
 const face = pet.querySelector('.pet-face');
+const photo = document.getElementById('pet-photo');
 const bubble = document.getElementById('bubble');
 const menu = document.getElementById('menu');
 
 const FORMS = {
   cat:   { emoji: '🐱', name: '喵喵' },
   robot: { emoji: '🤖', name: '小铁' },
-  slime: { emoji: '🟢', name: '咕叽' }
+  slime: { emoji: '🟢', name: '咕叽' },
+  custom:{ emoji: '🐱', name: '宝贝' }
 };
 
 // 不同心情下的脸
@@ -16,19 +18,31 @@ const MOOD_FACE = {
   slime: { normal: '🟢', happy: '😄', alert: '🟠' }
 };
 
-let currentForm = 'cat';
+let currentForm = 'custom';
 let bubbleTimer = null;
 
 function applyForm(form) {
   currentForm = form;
   pet.className = `form-${form} mood-normal`;
-  face.textContent = MOOD_FACE[form].normal;
+  if (form === 'custom') {
+    loadCustomImage();
+  } else if (MOOD_FACE[form]) {
+    face.textContent = MOOD_FACE[form].normal;
+  }
+}
+
+function loadCustomImage() {
+  window.api.getCustomImage().then((url) => {
+    if (url) photo.src = url;
+  });
 }
 
 function setMood(mood) {
   pet.classList.remove('mood-normal', 'mood-happy', 'mood-alert');
   pet.classList.add(`mood-${mood}`);
-  face.textContent = (MOOD_FACE[currentForm] && MOOD_FACE[currentForm][mood]) || FORMS[currentForm].emoji;
+  if (currentForm !== 'custom') {
+    face.textContent = (MOOD_FACE[currentForm] && MOOD_FACE[currentForm][mood]) || (FORMS[currentForm] && FORMS[currentForm].emoji) || '🐱';
+  }
 }
 
 function say(text, mood = 'normal') {
@@ -136,6 +150,7 @@ menu.addEventListener('click', (e) => {
 // ---------- 来自主进程的事件 ----------
 window.api.onFormChanged((form) => applyForm(form));
 window.api.onPetSay((msg) => say(msg.text, msg.mood || 'normal'));
+window.api.onCustomImageChanged((url) => { if (url) photo.src = url; });
 
 // 初始化
-window.api.getState().then((s) => applyForm(s.form || 'cat'));
+window.api.getState().then((s) => applyForm(s.form || 'custom'));

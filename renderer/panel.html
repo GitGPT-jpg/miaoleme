@@ -36,11 +36,16 @@
       <div class="card">
         <h2>选择形态</h2>
         <div class="forms">
+          <button class="form-btn" data-form="custom"><span>📷</span>自定义</button>
           <button class="form-btn" data-form="cat"><span>🐱</span>喵喵</button>
           <button class="form-btn" data-form="robot"><span>🤖</span>小铁</button>
           <button class="form-btn" data-form="slime"><span>🟢</span>咕叽</button>
         </div>
-        <p class="hint">桌宠浮在屏幕上，直接拖动它移动位置；鼠标悬停呼出快捷菜单，点击它会互动并增加亲密度。</p>
+        <div class="upload-row">
+          <img id="custom-preview" class="custom-preview" alt="" />
+          <button id="upload-img">上传我的图片</button>
+        </div>
+        <p class="hint">「自定义」形态会把你上传的图片做成 3D 立牌效果浮在桌面。支持 PNG/JPG/GIF/WebP；建议用去背（透明底）图片效果更立体。拖动桌宠可移动位置。</p>
       </div>
       <div class="card center">
         <h2>养成</h2>
