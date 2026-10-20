@@ -146,7 +146,9 @@ menu.addEventListener('click', (e) => {
   if (!btn) return;
   const act = btn.dataset.act;
   if (act === 'water') {
-    say('咕噜咕噜~ 补水成功！', 'happy');
+    window.api.feedWater();
+  } else if (act === 'food') {
+    window.api.feedFood();
   } else if (act === 'game') {
     window.api.openPanel();
     window.api.petSay({ text: '去控制台找「小游戏」吧~', mood: 'happy' });
@@ -155,13 +157,38 @@ menu.addEventListener('click', (e) => {
   }
 });
 
+// ---------- 喂食请求徽标 ----------
+const feedBadge = document.getElementById('feed-badge');
+function renderFeedBadge(fs) {
+  if (!fs) return;
+  const waterBtn = feedBadge.querySelector('[data-feed="water"]');
+  const foodBtn = feedBadge.querySelector('[data-feed="food"]');
+  waterBtn.classList.toggle('hidden', !fs.water);
+  foodBtn.classList.toggle('hidden', !fs.meal);
+  feedBadge.classList.toggle('hidden', !fs.water && !fs.meal);
+}
+feedBadge.addEventListener('click', (e) => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  if (btn.dataset.feed === 'water') window.api.feedWater();
+  else if (btn.dataset.feed === 'food') window.api.feedFood();
+});
+
 // ---------- 来自主进程的事件 ----------
 window.api.onFormChanged((form) => applyForm(form));
-window.api.onPetSay((msg) => { if (msg && msg.text) say(msg.text, msg.mood || 'normal'); });
+window.api.onPetSay((msg) => {
+  if (!msg) return;
+  if (typeof msg.action === 'string') playAction(msg.action);
+  if (msg.text) say(msg.text, msg.mood || 'normal');
+});
 window.api.onCustomImageChanged(() => loadCustomImage());
+window.api.onFeedState((fs) => renderFeedBadge(fs));
 
 // 初始化
-window.api.getState().then((s) => applyForm(s.form || 'custom'));
+window.api.getState().then((s) => {
+  applyForm(s.form || 'custom');
+  renderFeedBadge(s.feed);
+});
 
 // ---------- 小范围跑动 + 动作（仅自定义形态） ----------
 let home = null;        // 游走的锚点（屏幕坐标）
@@ -175,7 +202,8 @@ const ACTIONS = {
   roll:  { label: '打个滚~ 看我肚皮！', ms: 3600 },
   groom: { label: '舔舔毛，保持美丽~', ms: 4000 },
   eat:   { label: '干饭时间到！🍚', ms: 4500 },
-  sleep: { label: '有点困了…睡会儿 💤', ms: 7000 }
+  sleep: { label: '有点困了…睡会儿 💤', ms: 7000 },
+  drink: { label: '咕噜咕噜~ 好喝！', ms: 3200 }
 };
 
 async function ensurePos() {
@@ -213,10 +241,7 @@ function playAction(name) {
     scheduleWander();
   }, act.ms);
 }
-// 允许从托盘/面板/快捷菜单触发（通过 pet-say 通道传一个特殊指令）
-window.api.onPetSay((msg) => {
-  if (msg && typeof msg.action === 'string') playAction(msg.action);
-});
+// 动作触发统一走上面的 onPetSay 通道（支持 action + text 组合）
 
 function scheduleWander() {
   clearTimeout(wanderTimer);

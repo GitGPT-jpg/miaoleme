@@ -72,6 +72,7 @@
         <label class="row"><input type="checkbox" id="water-enabled" /><span>开启</span></label>
         <label class="row"><span>间隔</span><input type="number" id="water-interval" min="5" max="240" step="5" /> 分钟
           <button id="water-save" class="mini">保存</button></label>
+        <div class="row"><button id="feed-water-btn">💧 喂猫咪喝水</button></div>
       </div>
       <div class="card">
         <h2>🧍 久坐提醒</h2>
@@ -135,6 +136,9 @@
           <button id="spin-btn">转！</button>
         </div>
         <p id="meal-result" class="result"></p>
+        <div class="meal-ctrl">
+          <button id="feed-food-btn">🍚 喂猫咪吃猫粮</button>
+        </div>
         <details>
           <summary>自定义菜单</summary>
           <textarea id="meal-custom" rows="3" placeholder="用逗号或换行分隔，留空用默认"></textarea>
