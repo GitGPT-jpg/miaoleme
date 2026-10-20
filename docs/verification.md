@@ -68,6 +68,9 @@
 | 番茄钟过期不虚增 | 预置 endTs=now-60s → 重启 → 读取 store | PASS（pomo=null，pomodoroDone 保持 1） |
 | 关闭喝水提醒清理待喂请求 | 代码路径复核（set-water 关闭时清 waterRequest 并广播） | PASS（代码级） |
 | 退出时杀生成子进程 | 代码路径复核（genChildren 集合 + will-quit SIGKILL） | PASS（代码级） |
+| 单实例 | 启动后再次启动，统计非 helper 主进程数 | PASS（1 → 1，第二次立即退出） |
+| 残留 running 任务标记 | 代码路径复核（启动时 running → failed/interrupted） | PASS（代码级；重启集成待观察结束后补） |
+| 拖拽中停止走路动画类 | 代码复核（beginDrag 移除 walking 类） | PASS（代码级，交互手测 NOT_RUN） |
 | 开发版启动 | `npm start`，进程存活，日志仅登录项权限报错（沙箱限制） | PASS |
 | 打包产物含新增模块 | `electron-builder --dir` + `asar list`（lib/* 均在包内） | PASS |
 | 打包产物启动 | 直接执行包内二进制，进程存活 | PASS |
