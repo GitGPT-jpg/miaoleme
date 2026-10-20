@@ -212,6 +212,7 @@ function beginDrag(e) {
   drag = { ready: false, moved: false, mx: e.screenX, my: e.screenY, wx: 0, wy: 0 };
   mode = 'drag';
   clearBehaviorTimers();
+  pet.classList.remove('walking');
   pet.classList.add('dragging');
   window.api.getWinPos().then((p) => {
     // 过期初始化：拖拽已结束或形态已切换 → 丢弃

@@ -2,6 +2,7 @@ const { app, BrowserWindow, Tray, Menu, ipcMain, Notification, screen, nativeIma
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const genChildren = new Set();
 
 // ---------- 数据持久化 ----------
 // 改名迁移（零度突破 → 喵了么）：把旧应用数据目录的内容搬到新目录，保留用户的桌宠/设置
@@ -28,6 +29,7 @@ const { mealSlotAt, mealEligible, inDndWindow, meetingNotice, ddlNotice, clearMa
 const { classifyGenError, validateImageBuffer, deriveJobStatus, extractImageBase64 } = require('./lib/gen');
 const { createGenJob } = require('./lib/genjob');
 const { clampToArea, isInsideAnyDisplay } = require('./lib/geometry');
+const { restorePomodoro, pomoSnapshot } = require('./lib/pomodoro');
 
 function loadState() {
   const res = readState(STORE_FILE);
@@ -267,6 +269,7 @@ function genViaScript(cfg, srcPath, poseName, prompt) {
     const finish = (res) => { if (!settled) { settled = true; clearTimeout(timer); resolve(res); } };
     const child = spawn('bash', [cfg.skillScript, '--prompt', prompt, '--input', srcPath, '--output', out, '--aspect-ratio', '1:1', '--resolution', '2K'],
       { cwd: app.getPath('userData'), env });
+    genChildren.add(child);
     const timer = setTimeout(() => {
       try { child.kill('SIGKILL'); } catch (e) { /* already gone */ }
       finish({ ok: false, error: 'timeout' });
@@ -274,6 +277,7 @@ function genViaScript(cfg, srcPath, poseName, prompt) {
     child.stdout.on('data', (d) => { if (stdout.length < 100 * 1024) stdout += d.toString(); });
     child.stderr.on('data', (d) => { if (stderr.length < 100 * 1024) stderr += d.toString(); });
     child.on('close', (code) => {
+      genChildren.delete(child);
       const line = stdout.trim().split('\n').filter(Boolean).pop();
       if (code === 0 && line && fs.existsSync(line)) finish({ ok: true, path: line });
       else finish({ ok: false, error: code === 0 ? 'bad_response' : 'transient' });
@@ -706,6 +710,11 @@ function checkReminders() {
 // ---------- 番茄钟 ----------
 let pomo = { active: false, phase: 'work', endTs: 0, timer: null };
 
+function persistPomo() {
+  state.pomo = pomoSnapshot(pomo);
+  saveState();
+}
+
 function pomoBroadcast() {
   const remain = Math.max(0, Math.round((pomo.endTs - Date.now()) / 1000));
   const payload = { active: pomo.active, phase: pomo.phase, remain };
@@ -717,14 +726,15 @@ function startPomodoro() {
   pomo.active = true;
   pomo.phase = 'work';
   pomo.endTs = Date.now() + state.pomodoro.workMin * 60 * 1000;
+  persistPomo();
   petSay(`开始专注 ${state.pomodoro.workMin} 分钟，加油！`, 'happy');
   pomo.timer = setInterval(() => {
     if (Date.now() >= pomo.endTs) {
       if (pomo.phase === 'work') {
         state.stats.pomodoroDone = (state.stats.pomodoroDone || 0) + 1;
-        saveState();
         pomo.phase = 'break';
         pomo.endTs = Date.now() + state.pomodoro.breakMin * 60 * 1000;
+        persistPomo();
         notify('🍅 专注完成', `休息 ${state.pomodoro.breakMin} 分钟吧~`);
         petSay('专注完成！休息一下~', 'happy');
       } else {
@@ -742,7 +752,42 @@ function startPomodoro() {
 function stopPomodoro(silent) {
   if (pomo.timer) clearInterval(pomo.timer);
   pomo = { active: false, phase: 'work', endTs: 0, timer: null };
+  persistPomo();
   if (!silent) pomoBroadcast();
+}
+
+// 启动时恢复番茄钟：未到期继续计时；已到期只提示，不虚构完成次数
+function restorePomodoroOnStartup() {
+  const r = restorePomodoro(state.pomo, Date.now());
+  if (r.action === 'resume') {
+    pomo = { active: true, phase: r.phase, endTs: Date.now() + r.remainMs, timer: null };
+    pomo.timer = setInterval(() => {
+      if (Date.now() >= pomo.endTs) {
+        if (pomo.phase === 'work') {
+          state.stats.pomodoroDone += 1;
+          pomo.phase = 'break';
+          pomo.endTs = Date.now() + state.pomodoro.breakMin * 60 * 1000;
+          persistPomo();
+          notify('🍅 专注完成', `休息 ${state.pomodoro.breakMin} 分钟吧~`);
+          petSay('专注完成！休息一下~', 'happy');
+        } else {
+          notify('🍅 休息结束', '可以开始下一个番茄了！');
+          petSay('休息结束，继续加油？', 'normal');
+          stopPomodoro();
+          return;
+        }
+      }
+      pomoBroadcast();
+    }, 1000);
+    pomoBroadcast();
+  } else if (r.action === 'expired') {
+    state.pomo = null;
+    saveState();
+    pomoBroadcast();
+    petSay(r.phase === 'work' ? '上次专注已经结束啦（未计入完成）' : '上次休息已经结束啦', 'normal');
+  } else {
+    pomoBroadcast();
+  }
 }
 
 // ---------- 对外状态（给面板用） ----------
@@ -888,6 +933,12 @@ ipcMain.handle('set-water', (e, cfg) => {
     intervalMin: Math.min(240, Math.max(5, parseInt(c.intervalMin, 10) || 45))
   });
   state.water.lastRemindTs = Date.now();
+  if (!state.water.enabled) {
+    // 关闭提醒时清理待喂请求，避免徽标永久停留
+    state.feed.waterRequest = false;
+    state.feed.waterNagTs = 0;
+    broadcastFeedState();
+  }
   saveState();
   return publicState();
 });
@@ -1056,6 +1107,13 @@ app.whenReady().then(() => {
   if (!openedAsHidden) openPanel(); // 手动启动展示面板；开机静默启动不打扰
   checkReminders();
   reminderTimer = setInterval(checkReminders, 20 * 1000); // 每 20 秒检查一次
+  restorePomodoroOnStartup();
+
+  // 上次退出时仍在运行的任务：标记为中断，避免面板显示虚假“生成中”
+  if (state.genJob && state.genJob.status === 'running') {
+    state.genJob = Object.assign({}, state.genJob, { status: 'failed', errorCode: 'interrupted', activePose: null, updatedAt: Date.now() });
+    saveState();
+  }
 
   // 同步开机自启设置
   try {
@@ -1075,6 +1133,8 @@ app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   if (reminderTimer) clearInterval(reminderTimer);
   stopPomodoro(true);
+  for (const child of genChildren) { try { child.kill('SIGKILL'); } catch (e) { /* already gone */ } }
+  genChildren.clear();
 });
 
 app.on('window-all-closed', (e) => {
