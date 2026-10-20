@@ -1,0 +1,31 @@
+name: build-windows-installer
+
+# 在 Windows 机器上构建 NSIS 安装包（macOS 上无法构建 NSIS：wine/makensis 需要 x86_64）
+# 用法：把本仓库推到 GitHub（git remote add origin <你的仓库> && git push），
+# 然后在 Actions 页面手动触发本 workflow，构建产物可在 Artifacts 下载。
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+
+jobs:
+  build-win:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: 安装依赖
+        run: npm install
+      - name: 构建 Windows 安装包 (NSIS + zip)
+        env:
+          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+        run: npx electron-builder --win zip nsis --x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: |
+            dist/*.exe
+            dist/*-win.zip
+          retention-days: 14
