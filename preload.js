@@ -39,5 +39,6 @@ contextBridge.exposeInMainWorld('api', {
   onPetSay: (cb) => ipcRenderer.on('pet-say', (e, msg) => cb(msg)),
   onCustomImageChanged: (cb) => ipcRenderer.on('custom-image-changed', (e, url) => cb(url)),
   onStateUpdated: (cb) => ipcRenderer.on('state-updated', (e, s) => cb(s)),
-  onPomodoroTick: (cb) => ipcRenderer.on('pomodoro-tick', (e, p) => cb(p))
+  onPomodoroTick: (cb) => ipcRenderer.on('pomodoro-tick', (e, p) => cb(p)),
+  onGenStatus: (cb) => ipcRenderer.on('gen-status', (e, s) => cb(s))
 });

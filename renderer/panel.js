@@ -40,9 +40,22 @@ document.getElementById('upload-img').addEventListener('click', async () => {
   if (res && res.ok) {
     if (res.dataUrl) { customPreview.src = res.dataUrl; customPreview.classList.add('show'); }
     renderForm('custom');
-    window.api.petSay({ text: '换上新形象啦，好看吗~', mood: 'happy' });
+    if (res.generating) setGenStatus({ state: 'generating' });
+    window.api.petSay({ text: '换上新形象啦~', mood: 'happy' });
   }
 });
+
+// 后台 3D 生成状态
+const genStatusEl = document.getElementById('gen-status');
+function setGenStatus(s) {
+  genStatusEl.className = 'gen-status';
+  if (!s) { genStatusEl.textContent = ''; return; }
+  if (s.state === 'generating') { genStatusEl.classList.add('busy'); genStatusEl.textContent = '正在后台生成 3D 形象，请稍候…'; }
+  else if (s.state === 'done') { genStatusEl.classList.add('ok'); genStatusEl.textContent = '✅ 3D 形象已生成并应用'; loadCustomPreview(); }
+  else if (s.state === 'failed') { genStatusEl.classList.add('err'); genStatusEl.textContent = '⚠️ 生成失败，已使用原图'; }
+  else if (s.state === 'unavailable') { genStatusEl.classList.add('err'); genStatusEl.textContent = '⚠️ 未配置生成服务，已使用原图'; }
+}
+window.api.onGenStatus((s) => setGenStatus(s));
 
 // ---------- 喝水 ----------
 const waterEnabled = document.getElementById('water-enabled');

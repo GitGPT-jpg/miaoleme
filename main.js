@@ -1,13 +1,16 @@
 const { app, BrowserWindow, Tray, Menu, ipcMain, Notification, screen, nativeImage, globalShortcut, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { spawn } = require('child_process');
 
 // ---------- 数据持久化 ----------
 const STORE_FILE = path.join(app.getPath('userData'), 'zerobreak-store.json');
 
 const DEFAULT_STATE = {
   form: 'custom',         // cat | robot | slime | custom（自定义图片）
-  customImage: null,      // 用户上传的自定义图片绝对路径（为空则用内置猫咪）
+  customImage: null,      // 用户上传的原始图片绝对路径
+  customGenIdle: null,    // 由原图在后台生成的 3D 站立帧路径
+  customGenWalk: null,    // 由原图在后台生成的 3D 行走帧路径
   water: {
     enabled: true,
     intervalMin: 45,      // 每隔多少分钟提醒喝水
@@ -98,7 +101,9 @@ function fileToDataUrl(p) {
   }
 }
 
+// customImagePath 供面板预览用：优先生成帧，其次原图，再退内置
 function customImagePath() {
+  if (state.customGenIdle && fs.existsSync(state.customGenIdle)) return state.customGenIdle;
   if (state.customImage && fs.existsSync(state.customImage)) return state.customImage;
   if (fs.existsSync(BUNDLED_IDLE)) return BUNDLED_IDLE;
   return null;
@@ -108,8 +113,14 @@ function customImageDataUrl() {
   return fileToDataUrl(customImagePath());
 }
 
-// 返回 { idle, walk, actions } ：用户自定义单图时 walk=idle 且无动作；默认内置 3D 猫有独立行走帧与多个动作帧
+// 返回 { idle, walk, actions }：
+// 优先用「原图在后台生成的 3D 帧」；其次用户原图（生成未完成/失败时的回退）；都没有则内置 3D 猫
 function customFrames() {
+  if (state.customGenIdle && fs.existsSync(state.customGenIdle)) {
+    const idle = fileToDataUrl(state.customGenIdle);
+    const walk = (state.customGenWalk && fs.existsSync(state.customGenWalk)) ? fileToDataUrl(state.customGenWalk) : idle;
+    return { idle, walk, actions: {} };
+  }
   if (state.customImage && fs.existsSync(state.customImage)) {
     const u = fileToDataUrl(state.customImage);
     return { idle: u, walk: u, actions: {} };
@@ -124,6 +135,92 @@ function customFrames() {
     walk: fileToDataUrl(BUNDLED_WALK) || fileToDataUrl(BUNDLED_IDLE),
     actions
   };
+}
+
+// ---------- 后台生成 3D 形象 ----------
+const GEN_IDLE_PROMPT = 'Turn the person/pet/subject in this photo into an adorable chibi 3D mascot character, Pixar/Blender toy-figure style, big round head, large glossy expressive eyes, soft shading, keep the subject\'s key colors and recognizable features. Full body standing in a cute 3/4 front pose, soft studio lighting with subtle rim light, glossy clean render. Isolated on a FULLY TRANSPARENT background, PNG, subject centered, no ground, no baked shadow, high detail.';
+const GEN_WALK_PROMPT = 'Turn the person/pet/subject in this photo into an adorable chibi 3D mascot character, Pixar/Blender toy-figure style, big round head, large glossy eyes, keep the subject\'s key colors and recognizable features. Full body in a cute MID-WALK stride pose seen from a side 3/4 angle, one foot/paw lifted forward, playful happy expression, soft studio lighting, glossy clean render. Isolated on a FULLY TRANSPARENT background, PNG, subject centered, no ground, no baked shadow, high detail.';
+
+function loadGenConfig() {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, 'generation.config.json'), 'utf-8'));
+  } catch (e) {
+    return null;
+  }
+}
+
+function genAvailable() {
+  const cfg = loadGenConfig();
+  return !!(cfg && cfg.enabled && cfg.skillScript && fs.existsSync(cfg.skillScript));
+}
+
+// 调用图像生成脚本，把 srcPath 转成一帧 3D 形象；成功返回输出文件绝对路径，失败返回 null
+function genAvatarFrame(srcPath, pose) {
+  return new Promise((resolve) => {
+    const cfg = loadGenConfig();
+    if (!cfg || !cfg.enabled || !fs.existsSync(cfg.skillScript)) return resolve(null);
+    const prompt = pose === 'walk' ? GEN_WALK_PROMPT : GEN_IDLE_PROMPT;
+    const out = `pet-gen-${pose}-${Date.now()}.png`;
+    const env = Object.assign({}, process.env, {
+      COMATE_USERNAME_ENCRYPTED: cfg.comateUsernameEncrypted || process.env.COMATE_USERNAME_ENCRYPTED || ''
+    });
+    let stdout = '';
+    let stderr = '';
+    const child = spawn('bash', [cfg.skillScript, '--prompt', prompt, '--input', srcPath, '--output', out, '--aspect-ratio', '1:1', '--resolution', '2K'],
+      { cwd: app.getPath('userData'), env });
+    child.stdout.on('data', (d) => { stdout += d.toString(); });
+    child.stderr.on('data', (d) => { stderr += d.toString(); });
+    child.on('close', (code) => {
+      const line = stdout.trim().split('\n').filter(Boolean).pop();
+      if (code === 0 && line && fs.existsSync(line)) resolve(line);
+      else { console.error('[gen] failed', code, stderr.slice(-300)); resolve(null); }
+    });
+    child.on('error', (err) => { console.error('[gen] spawn error', err); resolve(null); });
+  });
+}
+
+let generating = false;
+function sendGenStatus(status) {
+  if (panelWin) panelWin.webContents.send('gen-status', status);
+}
+
+// 上传后触发：后台生成 idle + walk 两帧 3D 形象，完成即替换
+async function generate3DFromUpload(srcPath) {
+  if (!genAvailable()) {
+    sendGenStatus({ state: 'unavailable' });
+    petSay('（未配置生成服务，先用原图啦）', 'normal');
+    return;
+  }
+  if (generating) return;
+  generating = true;
+  sendGenStatus({ state: 'generating' });
+  petSay('正在把你的照片变成 3D 立体形象，稍等一下下~', 'happy');
+  try {
+    const idle = await genAvatarFrame(srcPath, 'idle');
+    if (idle) {
+      state.customGenIdle = idle;
+      saveState();
+      broadcastCustomImage();
+      petSay('3D 形象出炉啦！我在做行走动作…', 'happy');
+    }
+    const walk = await genAvatarFrame(srcPath, 'walk');
+    if (walk) {
+      state.customGenWalk = walk;
+      saveState();
+      broadcastCustomImage();
+    }
+    if (idle) { sendGenStatus({ state: 'done' }); petSay('变身完成，喜欢吗~', 'happy'); }
+    else { sendGenStatus({ state: 'failed' }); petSay('3D 生成没成功，先用原图啦', 'normal'); }
+  } catch (e) {
+    sendGenStatus({ state: 'failed' });
+  } finally {
+    generating = false;
+  }
+}
+
+function broadcastCustomImage() {
+  if (petWin) petWin.webContents.send('custom-image-changed', customImageDataUrl());
+  if (panelWin) panelWin.webContents.send('state-updated', publicState());
 }
 
 
@@ -487,13 +584,17 @@ ipcMain.handle('upload-custom-image', async () => {
     const dest = path.join(app.getPath('userData'), 'pet-custom' + ext);
     fs.copyFileSync(src, dest);
     state.customImage = dest;
+    state.customGenIdle = null;   // 清除上一次生成的 3D 帧，待重新生成
+    state.customGenWalk = null;
     state.form = 'custom';
     saveState();
     refreshTrayMenu();
     const url = customImageDataUrl();
     if (petWin) { petWin.webContents.send('form-changed', 'custom'); petWin.webContents.send('custom-image-changed', url); }
     if (panelWin) panelWin.webContents.send('state-updated', publicState());
-    return { ok: true, dataUrl: url };
+    // 后台异步生成 3D 形象（不阻塞上传返回；先用原图占位，生成完自动替换）
+    generate3DFromUpload(dest);
+    return { ok: true, dataUrl: url, generating: genAvailable() };
   } catch (err) {
     return { ok: false, error: String(err) };
   }
