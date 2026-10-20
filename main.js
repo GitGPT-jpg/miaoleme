@@ -27,6 +27,7 @@ const { normalizeState, readState } = require('./lib/store');
 const { mealSlotAt, mealEligible, inDndWindow, meetingNotice, ddlNotice, clearMarks, dateKey } = require('./lib/schedule');
 const { classifyGenError, validateImageBuffer, deriveJobStatus, extractImageBase64 } = require('./lib/gen');
 const { createGenJob } = require('./lib/genjob');
+const { clampToArea, isInsideAnyDisplay } = require('./lib/geometry');
 
 function loadState() {
   const res = readState(STORE_FILE);
@@ -470,16 +471,9 @@ function createPetWindow() {
   const winW = 220;
   const winH = 260;
   const defPos = { x: width - winW - 20, y: height - winH - 20 };
-  let pos = defPos;
-  if (state.petPos && typeof state.petPos.x === 'number') {
-    // 校验保存的位置是否仍落在某个显示器内（防止拔掉外接屏后桌宠跑到屏幕外）
-    const p = state.petPos;
-    const onScreen = screen.getAllDisplays().some((d) => {
-      const b = d.bounds;
-      return p.x + winW > b.x && p.x < b.x + b.width && p.y + winH > b.y && p.y < b.y + b.height;
-    });
-    pos = onScreen ? p : defPos;
-  }
+  const pos = isInsideAnyDisplay(state.petPos, winW, winH, screen.getAllDisplays())
+    ? state.petPos
+    : defPos;
   petWin = new BrowserWindow({
     width: winW,
     height: winH,
@@ -610,7 +604,8 @@ function setForm(form) {
   if (panelWin) panelWin.webContents.send('state-updated', publicState());
 }
 
-function petSay(text, mood = 'normal') {
+function petSay(text, mood = 'normal', force = false) {
+  if (state.quiet && !force) return;   // 安静模式：自动气泡静默，用户主动操作仍可反馈
   if (petWin) petWin.webContents.send('pet-say', { text, mood });
 }
 
@@ -763,6 +758,7 @@ function publicState() {
     dnd: state.dnd,
     theme: state.theme,
     autoLaunch: state.autoLaunch,
+    quiet: state.quiet,
     stats: state.stats,
     meetings: state.meetings,
     ddls: state.ddls,
@@ -780,7 +776,7 @@ function feedWater() {
   state.stats.intimacy += 1;
   saveState();
   broadcastFeedState();
-  if (petWin) petWin.webContents.send('pet-say', { action: 'drink', text: '咕噜咕噜~ 猫咪喝饱啦，主人也喝水了吗？', mood: 'happy' });
+  if (petWin) petWin.webContents.send('pet-say', { action: 'drink', text: '咕噜咕噜~ 猫咪喝饱啦，主人也喝水了吗？', mood: 'happy' });  // 用户主动操作，安静模式下也反馈
   notify('💧 喂水完成', '猫咪喝饱啦，主人也记得喝水~');
 }
 
@@ -1010,6 +1006,13 @@ ipcMain.handle('feed-water', () => { feedWater(); return publicState(); });
 ipcMain.handle('feed-food', () => { feedFood(); return publicState(); });
 ipcMain.on('snooze', (e, minutes) => { snoozeAll(minutes); });
 
+// 安静模式
+ipcMain.handle('set-quiet', (e, enabled) => {
+  state.quiet = !!enabled;
+  saveState();
+  return publicState();
+});
+
 // 桌宠点击穿透控制：鼠标在宠物上时可交互，否则穿透
 ipcMain.on('set-ignore-mouse', (e, ignore) => {
   if (petWin) petWin.setIgnoreMouseEvents(ignore, { forward: true });
@@ -1025,10 +1028,8 @@ ipcMain.on('set-win-pos', (e, x, y) => {
   if (!petWin || !Number.isFinite(x) || !Number.isFinite(y)) return;
   const [w, h] = petWin.getSize();
   const disp = screen.getDisplayNearestPoint({ x: Math.round(x), y: Math.round(y) });
-  const b = disp.workArea;
-  const cx = Math.max(b.x, Math.min(Math.round(x), b.x + b.width - w));
-  const cy = Math.max(b.y, Math.min(Math.round(y), b.y + b.height - h));
-  petWin.setPosition(cx, cy);
+  const p = clampToArea(x, y, w, h, disp.workArea);
+  petWin.setPosition(p.x, p.y);
 });
 ipcMain.on('save-win-pos', (e, x, y) => {
   if (!Number.isFinite(x) || !Number.isFinite(y)) return;
@@ -1036,7 +1037,7 @@ ipcMain.on('save-win-pos', (e, x, y) => {
   saveState();
 });
 
-ipcMain.on('pet-say', (e, msg) => petSay(msg.text, msg.mood));
+ipcMain.on('pet-say', (e, msg) => petSay(msg.text, msg.mood, true));
 ipcMain.on('trigger-action', (e, name) => {
   const allowed = ['roll', 'groom', 'eat', 'sleep', 'drink'];
   if (!allowed.includes(name)) return;
@@ -1050,7 +1051,9 @@ app.whenReady().then(() => {
   createPetWindow();
   createPanelWindow();
   buildTray();
-  openPanel(); // 首次启动直接展示功能面板，避免用户找不到入口
+  let openedAsHidden = false;
+  try { openedAsHidden = !!(app.getLoginItemSettings && app.getLoginItemSettings().wasOpenedAsHidden); } catch (err) { /* ignore */ }
+  if (!openedAsHidden) openPanel(); // 手动启动展示面板；开机静默启动不打扰
   checkReminders();
   reminderTimer = setInterval(checkReminders, 20 * 1000); // 每 20 秒检查一次
 

@@ -103,6 +103,7 @@ button.mini { padding: 6px 10px; font-size: 12px; background: var(--accent-soft)
 .list li .del { background: #ffecec; color: #e85d5d; padding: 4px 8px; font-size: 12px; }
 body[data-theme="dark"] .list li .del { background: #4a2b2b; color: #ff9b9b; }
 .list li.soon { background: #fff6e6; }
+.list li.past { opacity: .55; }
 body[data-theme="dark"] .list li.soon { background: #4a3f22; }
 .empty { color: var(--muted); text-align: center; padding: 10px; font-size: 13px; }
 

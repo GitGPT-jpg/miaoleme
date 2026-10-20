@@ -178,8 +178,9 @@ const IDLE_LINES = [
   '工作再忙也要休息一下~',
   '我一直在陪着你呢'
 ];
+let quiet = false;
 setInterval(() => {
-  if (mode !== 'idle' || dragging()) return;
+  if (quiet || mode !== 'idle' || dragging()) return;
   if (Math.random() < 0.5) say(IDLE_LINES[Math.floor(Math.random() * IDLE_LINES.length)], 'happy');
 }, 60 * 1000);
 
@@ -403,7 +404,9 @@ window.api.onFeedState((fs) => renderFeedBadge(fs));
 
 // 初始化
 window.api.getState().then((s) => {
+  quiet = !!s.quiet;
   applyForm(s.form || 'custom');
   renderFeedBadge(s.feed);
 });
+window.api.onStateUpdated((s) => { quiet = !!s.quiet; });
 scheduleWander();

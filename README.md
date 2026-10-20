@@ -34,12 +34,21 @@
 
 ## 🚀 快速开始
 
+环境要求：macOS（优先）或 Windows/Linux，Node.js ≥ 20，npm。
+
 ```bash
-npm install
-npm start
+npm ci          # 按锁文件安装依赖
+npm start       # 启动（launch.js 会自动清理 ELECTRON_RUN_AS_NODE，勿删）
+npm test        # 运行单元测试（node:test，无额外依赖）
 ```
 
 桌宠会出现在屏幕角落，控制台随启动打开。**关闭控制台窗口不会退出**，程序常驻在菜单栏托盘（小猫头图标）。
+
+数据位置（本地 JSON，原子写入，损坏会自动备份为 `*.corrupt-<时间戳>` 后重建）：
+- macOS：`~/Library/Application Support/miaoleme/zerobreak-store.json`
+- Windows：`%APPDATA%/miaoleme/zerobreak-store.json`
+
+从旧版「零度突破」升级时，应用会自动迁移旧数据目录。
 
 ## 📦 打包
 
@@ -53,17 +62,23 @@ npm run pack        # 免安装目录版
 
 ## 🔧 图像生成配置
 
-上传照片后的 3D 生成支持两种服务商，配置写在 `generation.config.json`（已 gitignore，不随仓库分发）：
+上传照片后的 3D 生成支持两种服务商。复制 `generation.config.example.json` 为 `generation.config.json` 并填入自己的凭据（该文件已被 `.gitignore` 忽略，不会进入仓库或安装包）：
 
 ```json
 {
-  "provider": "comate",           // 或 "qianfan"
-  "comate": { "apiUrl": "...", "loginName": "..." },
-  "qianfan": { "apiUrl": "https://qianfan.baidubce.com/v2/images/generations", "apiKey": "你的API Key", "model": "ernie-image-turbo" }
+  "provider": "comate",
+  "comate": { "apiUrl": "<服务地址>", "loginName": "<身份头>" },
+  "qianfan": { "apiUrl": "https://qianfan.baidubce.com/v2/images/generations", "apiKey": "<API Key>", "model": "ernie-image-turbo" }
 }
 ```
 
-未配置时上传照片会安全回退为原图显示。生成期间先用原图占位，每生成一帧即时替换，面板有进度条（站立优先、其余并行）。
+行为说明：
+- **未配置时不发起任何请求**，上传只使用原图
+- 生成时把所选图片发送到配置的服务；配置可从用户数据目录或项目目录读取（前者优先）
+- 站立帧优先生成，其余姿势并发 2；瞬时错误（429/5xx/超时）最多额外重试 2 次，认证/请求错误不重试
+- 每次上传使用独立输入快照与任务 ID，旧任务的迟到结果不会覆盖新形象
+- 结果状态：全部成功 / 部分成功（可重试失败项）/ 失败 / 已取消 / 未配置；面板可关闭重开后继续查看真实进度
+- 千帆分支的图生图协议以实际服务为准，未联调前不代表兼容
 
 ## 📁 目录结构
 
@@ -84,9 +99,19 @@ npm run pack        # 免安装目录版
 
 Electron + 原生 JS/CSS（无框架依赖），数据本地 JSON 存储（原子写入），安全基线：contextIsolation + sandbox + CSP + IPC 输入校验。
 
-## ⚠️ 说明
+## 🧪 测试与验证
 
-- 打包产物未签名：首次打开若被拦截，右键 → 打开
+```bash
+npm test        # 31+ 个单元测试：数据校验/损坏恢复、餐次去重、免打扰边界、会议/DDL 漏窗、
+                # 番茄钟语义、生成错误分类/图片校验、并发池、任务隔离/取消/截止/部分成功
+```
+
+验收记录（PASS / FAIL / BLOCKED / NOT_RUN）、实际验证方式与已知限制见 [docs/verification.md](docs/verification.md)。
+
+## ⚠️ 说明与限制
+
+- 打包产物未签名：首次打开若被拦截，右键 → 打开；正式分发需要签名/公证
+- Windows 安装包（NSIS）需在 Windows 构建：仓库根目录 `windows-build-workflow.yml` 移入 `.github/workflows/` 后由 CI 产出
 - 桌宠 3D 帧由图像生成模型制作，仅供本项目使用
 - 本项目为独立作品，与任何模型/平台官方无关
 
