@@ -1,6 +1,7 @@
 const pet = document.getElementById('pet');
 const face = pet.querySelector('.pet-face');
-const photo = document.getElementById('pet-photo');
+const photoA = document.getElementById('pet-photo');
+const photoB = document.getElementById('pet-photo-b');
 const bubble = document.getElementById('bubble');
 const menu = document.getElementById('menu');
 
@@ -31,25 +32,81 @@ function applyForm(form) {
   }
 }
 
-let customIdleUrl = null;
-let customWalkUrl = null;
-let customActions = {};   // { roll, groom, eat, sleep } -> dataURL
+// ---------- 帧集合与双层交叉淡化 ----------
+// F = { idle:[u,alt], walk:[u,alt], happy:u, actions:{...} }
+let F = { idle: [], walk: [], happy: null, actions: {} };
+let visLayer = 'a';      // 当前可见层
+let activeUrl = null;
+let fadeBusy = false;
+
+function crossfadeTo(url, ms = 450) {
+  if (!url || url === activeUrl || fadeBusy) return;
+  fadeBusy = true;
+  const target = visLayer === 'a' ? photoB : photoA;
+  const other = visLayer === 'a' ? photoA : photoB;
+  const apply = () => {
+    target.style.transition = `opacity ${ms}ms ease`;
+    other.style.transition = `opacity ${ms}ms ease`;
+    target.style.opacity = '1';
+    other.style.opacity = '0';
+    setTimeout(() => {
+      visLayer = visLayer === 'a' ? 'b' : 'a';
+      activeUrl = url;
+      fadeBusy = false;
+      target.style.transition = '';
+      other.style.transition = '';
+    }, ms + 30);
+  };
+  if (target.src && target.src === url) {
+    apply();           // 已加载过（dataURL 直接比对）
+  } else {
+    target.onload = () => { target.onload = null; apply(); };
+    target.onerror = () => { target.onerror = null; fadeBusy = false; };
+    target.src = url;
+  }
+}
 
 function loadCustomImage() {
   window.api.getCustomFrames().then((frames) => {
     if (!frames) return;
-    customIdleUrl = frames.idle;
-    customWalkUrl = frames.walk || frames.idle;
-    customActions = frames.actions || {};
-    if (customIdleUrl) photo.src = customIdleUrl;
+    F = {
+      idle: [frames.idle, frames.idleAlt || frames.idle],
+      walk: [frames.walk || frames.idle, frames.walkAlt || frames.walk || frames.idle],
+      happy: frames.happy || frames.idle,
+      actions: frames.actions || {}
+    };
+    if (F.idle[0]) {
+      photoA.src = F.idle[0];
+      photoA.style.opacity = '1';
+      photoB.style.opacity = '0';
+      activeUrl = F.idle[0];
+      visLayer = 'a';
+      fadeBusy = false;
+    }
   });
 }
+
+// 站立呼吸：在站立/坐姿之间缓缓交替
+let idleTick = 0;
+setInterval(() => {
+  if (currentForm !== 'custom' || F.idle.length < 2) return;
+  if (pet.classList.contains('walking') || pet.classList.contains('acting') || dragging) return;
+  idleTick = (idleTick + 1) % 2;
+  crossfadeTo(F.idle[idleTick], 1200);
+}, 4200);
 
 function setMood(mood) {
   pet.classList.remove('mood-normal', 'mood-happy', 'mood-alert');
   pet.classList.add(`mood-${mood}`);
   if (currentForm !== 'custom') {
     face.textContent = (MOOD_FACE[currentForm] && MOOD_FACE[currentForm][mood]) || (FORMS[currentForm] && FORMS[currentForm].emoji) || '🐱';
+    return;
+  }
+  // 自定义形态：开心时切到抬头开心的帧（动作中不抢戏）
+  if (mood === 'happy' && F.happy && !pet.classList.contains('acting') && !pet.classList.contains('walking')) {
+    crossfadeTo(F.happy, 350);
+  } else if (mood === 'normal' && !pet.classList.contains('acting') && !pet.classList.contains('walking')) {
+    crossfadeTo(F.idle[0], 350);
   }
 }
 
@@ -212,32 +269,53 @@ async function ensurePos() {
   cur = { x: p.x, y: p.y };
 }
 
+// 走路：两帧交替 + 快速交叉淡化 = 迈步循环
+let walkTimer = null;
+let walkTick = 0;
 function setWalkFrame(on) {
+  clearInterval(walkTimer);
   if (on) {
     pet.classList.add('walking');
-    if (customWalkUrl) photo.src = customWalkUrl;
+    walkTick = 0;
+    if (F.walk.length) crossfadeTo(F.walk[0], 160);
+    walkTimer = setInterval(() => {
+      if (F.walk.length < 2) return;
+      walkTick = (walkTick + 1) % 2;
+      crossfadeTo(F.walk[walkTick], 160);
+    }, 280);
   } else {
     pet.classList.remove('walking');
-    if (!acting && customIdleUrl) photo.src = customIdleUrl;
+    if (!acting && F.idle.length) crossfadeTo(F.idle[0], 350);
   }
 }
 
-// 播放一个动作：定格到对应姿势帧 + 冒泡文字 + 维持数秒后回到站立
+// 播放一个动作：定格到对应姿势帧 + 冒泡文字 + 维持数秒后丝滑回到站立
+// 睡觉有两帧：交叉淡化模拟呼吸翻身
+let sleepCycleTimer = null;
 function playAction(name) {
   const act = ACTIONS[name];
-  const url = customActions && customActions[name];
+  const url = F.actions && F.actions[name];
   if (!act || !url || currentForm !== 'custom') return;
   clearTimeout(actTimer);
+  clearInterval(sleepCycleTimer);
   wandering = false;
   acting = true;
   pet.classList.remove('walking', 'face-left');
   pet.classList.add('acting', 'act-' + name);
-  photo.src = url;
+  crossfadeTo(url, 400);
+  if (name === 'sleep' && F.actions.sleep2) {
+    let tick = 0;
+    sleepCycleTimer = setInterval(() => {
+      tick = (tick + 1) % 2;
+      crossfadeTo(tick ? F.actions.sleep2 : F.actions.sleep, 900);
+    }, 2200);
+  }
   say(act.label, name === 'sleep' ? 'normal' : 'happy');
   actTimer = setTimeout(() => {
+    clearInterval(sleepCycleTimer);
     acting = false;
     pet.classList.remove('acting', 'act-roll', 'act-groom', 'act-eat', 'act-sleep');
-    if (customIdleUrl) photo.src = customIdleUrl;
+    if (F.idle.length) crossfadeTo(F.idle[0], 450);
     scheduleWander();
   }, act.ms);
 }
@@ -252,7 +330,7 @@ function scheduleWander() {
 async function startWander() {
   if (currentForm !== 'custom' || dragging || acting) { scheduleWander(); return; }
   // 一定概率随机做个动作，否则小范围走动
-  const names = Object.keys(customActions || {});
+  const names = Object.keys(F.actions || {}).filter((n) => n !== 'sleep2');
   if (names.length && Math.random() < 0.5) {
     playAction(names[Math.floor(Math.random() * names.length)]);
     return;

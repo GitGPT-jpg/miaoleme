@@ -89,11 +89,15 @@ let state = loadState();
 // ---------- 自定义图片 ----------
 const BUNDLED_IDLE = path.join(__dirname, 'assets', 'cat-3d-idle.png');
 const BUNDLED_WALK = path.join(__dirname, 'assets', 'cat-3d-walk.png');
+const BUNDLED_SIT = path.join(__dirname, 'assets', 'cat-3d-sit.png');
+const BUNDLED_WALK2 = path.join(__dirname, 'assets', 'cat-3d-walk2.png');
+const BUNDLED_HAPPY = path.join(__dirname, 'assets', 'cat-3d-happy.png');
 const BUNDLED_ACTIONS = {
   roll:  path.join(__dirname, 'assets', 'cat-3d-roll.png'),
   groom: path.join(__dirname, 'assets', 'cat-3d-groom.png'),
   eat:   path.join(__dirname, 'assets', 'cat-3d-eat.png'),
   sleep: path.join(__dirname, 'assets', 'cat-3d-sleep.png'),
+  sleep2:path.join(__dirname, 'assets', 'cat-3d-sleep2.png'),
   drink: path.join(__dirname, 'assets', 'cat-3d-drink.png')
 };
 
@@ -123,8 +127,8 @@ function customImageDataUrl() {
   return fileToDataUrl(customImagePath());
 }
 
-// 返回 { idle, walk, actions }：
-// 优先用「原图在后台生成的 3D 帧」；其次用户原图（生成未完成/失败时的回退）；都没有则内置 3D 猫
+// 返回帧集合：{ idle, idleAlt, walk, walkAlt, happy, actions:{..., sleepAlt} }
+// 内置 3D 猫返回多帧组（呼吸/迈步/睡姿成对，供丝滑循环）；用户自定义图返回单帧（成对帧退化为同一张）
 function customFrames() {
   if (state.customGenIdle && fs.existsSync(state.customGenIdle)) {
     const idle = fileToDataUrl(state.customGenIdle);
@@ -136,20 +140,25 @@ function customFrames() {
         if (p && fs.existsSync(p)) { const u = fileToDataUrl(p); if (u) actions[k] = u; }
       });
     }
-    return { idle, walk, actions };
+    return { idle, idleAlt: idle, walk, walkAlt: walk, happy: idle, actions };
   }
   if (state.customImage && fs.existsSync(state.customImage)) {
     const u = fileToDataUrl(state.customImage);
-    return { idle: u, walk: u, actions: {} };
+    return { idle: u, idleAlt: u, walk: u, walkAlt: u, happy: u, actions: {} };
   }
   const actions = {};
   Object.keys(BUNDLED_ACTIONS).forEach((k) => {
     const u = fileToDataUrl(BUNDLED_ACTIONS[k]);
     if (u) actions[k] = u;
   });
+  const idle = fileToDataUrl(BUNDLED_IDLE);
+  const walk = fileToDataUrl(BUNDLED_WALK) || idle;
   return {
-    idle: fileToDataUrl(BUNDLED_IDLE),
-    walk: fileToDataUrl(BUNDLED_WALK) || fileToDataUrl(BUNDLED_IDLE),
+    idle,
+    idleAlt: fileToDataUrl(BUNDLED_SIT) || idle,
+    walk,
+    walkAlt: fileToDataUrl(BUNDLED_WALK2) || walk,
+    happy: fileToDataUrl(BUNDLED_HAPPY) || idle,
     actions
   };
 }
