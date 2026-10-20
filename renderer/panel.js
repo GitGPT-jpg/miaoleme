@@ -235,20 +235,185 @@ document.getElementById('guess-reset').addEventListener('click', () => {
   document.getElementById('guess-result').textContent = '我想好了一个 1-100 的数字，来猜吧！';
 });
 
+// ---------- 主题 ----------
+function applyTheme(theme) {
+  document.body.setAttribute('data-theme', theme);
+  document.getElementById('theme-toggle').textContent = theme === 'dark' ? '☀️' : '🌙';
+  const dk = document.getElementById('theme-dark');
+  if (dk) dk.checked = theme === 'dark';
+}
+document.getElementById('theme-toggle').addEventListener('click', async () => {
+  const next = document.body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  const s = await window.api.setTheme(next);
+  applyTheme(s.theme);
+});
+document.getElementById('theme-dark').addEventListener('change', async (e) => {
+  const s = await window.api.setTheme(e.target.checked ? 'dark' : 'light');
+  applyTheme(s.theme);
+});
+
+// ---------- 统计 / 养成 ----------
+function renderStats(stats) {
+  const s = stats || { intimacy: 0, waterDone: 0, pomodoroDone: 0 };
+  document.getElementById('st-intimacy').textContent = s.intimacy || 0;
+  document.getElementById('st-water').textContent = s.waterDone || 0;
+  document.getElementById('st-pomo').textContent = s.pomodoroDone || 0;
+  const exp = (s.intimacy || 0) + (s.waterDone || 0) * 2 + (s.pomodoroDone || 0) * 5;
+  const level = Math.floor(exp / 20) + 1;
+  const pct = (exp % 20) / 20 * 100;
+  document.getElementById('st-level').textContent = 'Lv.' + level;
+  document.getElementById('level-fill').style.width = pct + '%';
+  document.getElementById('level-text').textContent = `当前 Lv.${level}，再获得 ${20 - (exp % 20)} 点成长值升级~`;
+}
+document.getElementById('pet-praise').addEventListener('click', async () => {
+  const stats = await window.api.addIntimacy(1);
+  renderStats(stats);
+  window.api.petSay({ text: '好舒服~ 最喜欢你啦！', mood: 'happy' });
+});
+
+// ---------- 久坐 ----------
+const sitEnabled = document.getElementById('sit-enabled');
+const sitInterval = document.getElementById('sit-interval');
+document.getElementById('sit-save').addEventListener('click', async () => {
+  await window.api.setSit({ enabled: sitEnabled.checked, intervalMin: parseInt(sitInterval.value || '60', 10) });
+  flash(document.getElementById('sit-save'), '已保存');
+});
+function renderSit(sit) {
+  if (!sit) return;
+  sitEnabled.checked = !!sit.enabled;
+  sitInterval.value = sit.intervalMin;
+}
+
+// ---------- 免打扰 ----------
+const dndEnabled = document.getElementById('dnd-enabled');
+const dndStart = document.getElementById('dnd-start');
+const dndEnd = document.getElementById('dnd-end');
+document.getElementById('dnd-save').addEventListener('click', async () => {
+  await window.api.setDnd({ enabled: dndEnabled.checked, start: dndStart.value, end: dndEnd.value });
+  flash(document.getElementById('dnd-save'), '已保存');
+});
+function renderDnd(dnd) {
+  if (!dnd) return;
+  dndEnabled.checked = !!dnd.enabled;
+  dndStart.value = dnd.start;
+  dndEnd.value = dnd.end;
+}
+
+// ---------- 开机自启 ----------
+document.getElementById('autolaunch').addEventListener('change', async (e) => {
+  await window.api.setAutoLaunch(e.target.checked);
+});
+
+// PLACEHOLDER_POMO_GAMES
+
+// ---------- 番茄钟 ----------
+const pomoWork = document.getElementById('pomo-work');
+const pomoBreak = document.getElementById('pomo-break');
+const pomoRing = document.querySelector('.pomo-ring');
+document.getElementById('pomo-cfg-save').addEventListener('click', async () => {
+  const s = await window.api.setPomodoro({ workMin: parseInt(pomoWork.value, 10), breakMin: parseInt(pomoBreak.value, 10) });
+  pomoWork.value = s.pomodoro.workMin; pomoBreak.value = s.pomodoro.breakMin;
+  document.getElementById('pomo-time').textContent = String(s.pomodoro.workMin).padStart(2, '0') + ':00';
+  flash(document.getElementById('pomo-cfg-save'), '已保存');
+});
+document.getElementById('pomo-start').addEventListener('click', () => window.api.pomodoroStart());
+document.getElementById('pomo-stop').addEventListener('click', () => window.api.pomodoroStop());
+window.api.onPomodoroTick((p) => {
+  const m = Math.floor(p.remain / 60), s = p.remain % 60;
+  document.getElementById('pomo-time').textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  const phaseEl = document.getElementById('pomo-phase');
+  pomoRing.classList.remove('run', 'break');
+  if (!p.active) { phaseEl.textContent = '准备开始'; }
+  else if (p.phase === 'work') { phaseEl.textContent = '专注中…'; pomoRing.classList.add('run'); }
+  else { phaseEl.textContent = '休息中…'; pomoRing.classList.add('break'); }
+});
+
+// ---------- 记忆翻牌 ----------
+const MEMORY_ICONS = ['🐱', '🤖', '🟢', '🍱', '💧', '🍅', '🎮', '⭐'];
+let memFirst = null, memLock = false, memMatched = 0;
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+function buildMemory() {
+  const grid = document.getElementById('memory-grid');
+  grid.innerHTML = '';
+  memFirst = null; memLock = false; memMatched = 0;
+  document.getElementById('memory-result').textContent = '翻开配对所有卡片~';
+  const deck = shuffle(MEMORY_ICONS.concat(MEMORY_ICONS));
+  deck.forEach((icon) => {
+    const c = document.createElement('div');
+    c.className = 'mcard';
+    c.dataset.icon = icon;
+    c.textContent = icon;
+    c.addEventListener('click', () => flipCard(c));
+    grid.appendChild(c);
+  });
+}
+function flipCard(c) {
+  if (memLock || c.classList.contains('open') || c.classList.contains('done')) return;
+  c.classList.add('open');
+  if (!memFirst) { memFirst = c; return; }
+  if (memFirst.dataset.icon === c.dataset.icon) {
+    memFirst.classList.add('done'); c.classList.add('done');
+    memFirst = null; memMatched++;
+    if (memMatched === MEMORY_ICONS.length) {
+      document.getElementById('memory-result').textContent = '🎉 全部配对完成！';
+      window.api.petSay({ text: '记忆力满分~', mood: 'happy' });
+    }
+  } else {
+    memLock = true;
+    const a = memFirst, b = c; memFirst = null;
+    setTimeout(() => { a.classList.remove('open'); b.classList.remove('open'); memLock = false; }, 700);
+  }
+}
+document.getElementById('memory-reset').addEventListener('click', buildMemory);
+
+// ---------- 反应力测试 ----------
+const reBox = document.getElementById('reaction-box');
+let reState = 'idle', reStart = 0, reTimer = null;
+reBox.addEventListener('click', () => {
+  if (reState === 'idle') {
+    reState = 'wait'; reBox.className = 'reaction-box wait'; reBox.textContent = '等待变绿…';
+    const delay = 1000 + Math.floor(Math.random() * 3000);
+    reTimer = setTimeout(() => {
+      reState = 'ready'; reBox.className = 'reaction-box ready'; reBox.textContent = '点我！';
+      reStart = performance.now();
+    }, delay);
+  } else if (reState === 'wait') {
+    clearTimeout(reTimer); reState = 'idle'; reBox.className = 'reaction-box'; reBox.textContent = '太早了！点击重试';
+    document.getElementById('reaction-result').textContent = '沉住气，等变绿再点~';
+  } else if (reState === 'ready') {
+    const ms = Math.round(performance.now() - reStart);
+    reState = 'idle'; reBox.className = 'reaction-box'; reBox.textContent = '再来一次';
+    document.getElementById('reaction-result').textContent = `反应速度：${ms} 毫秒 ${ms < 250 ? '⚡ 神速！' : ms < 400 ? '👍 不错' : '🐢 再练练'}`;
+  }
+});
+
 // ---------- 初始化 ----------
+function renderAll(s) {
+  renderForm(s.form);
+  renderWater(s.water);
+  renderSit(s.sit);
+  renderDnd(s.dnd);
+  renderStats(s.stats);
+  applyTheme(s.theme || 'light');
+  if (s.pomodoro) { pomoWork.value = s.pomodoro.workMin; pomoBreak.value = s.pomodoro.breakMin; }
+  document.getElementById('autolaunch').checked = !!s.autoLaunch;
+  renderMeetings(s.meetings);
+  renderDdls(s.ddls);
+}
 async function init() {
   const s = await window.api.getState();
-  renderForm(s.form);
-  renderWater(s.water);
-  renderMeetings(s.meetings);
-  renderDdls(s.ddls);
+  renderAll(s);
   buildWheel();
+  buildMemory();
 }
-window.api.onStateUpdated((s) => {
-  renderForm(s.form);
-  renderWater(s.water);
-  renderMeetings(s.meetings);
-  renderDdls(s.ddls);
-});
+window.api.onStateUpdated((s) => renderAll(s));
 init();
+
 

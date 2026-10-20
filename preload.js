@@ -5,10 +5,22 @@ contextBridge.exposeInMainWorld('api', {
   getState: () => ipcRenderer.invoke('get-state'),
   setForm: (form) => ipcRenderer.invoke('set-form', form),
   setWater: (cfg) => ipcRenderer.invoke('set-water', cfg),
+  setSit: (cfg) => ipcRenderer.invoke('set-sit', cfg),
+  setDnd: (cfg) => ipcRenderer.invoke('set-dnd', cfg),
+  setPomodoro: (cfg) => ipcRenderer.invoke('set-pomodoro', cfg),
+  setTheme: (theme) => ipcRenderer.invoke('set-theme', theme),
+  setAutoLaunch: (v) => ipcRenderer.invoke('set-autolaunch', v),
   addMeeting: (payload) => ipcRenderer.invoke('add-meeting', payload),
   removeMeeting: (id) => ipcRenderer.invoke('remove-meeting', id),
   addDdl: (payload) => ipcRenderer.invoke('add-ddl', payload),
   removeDdl: (id) => ipcRenderer.invoke('remove-ddl', id),
+  addIntimacy: (n) => ipcRenderer.invoke('add-intimacy', n),
+  drinkWater: () => ipcRenderer.invoke('drink-water'),
+
+  // 番茄钟 / 贪睡控制
+  pomodoroStart: () => ipcRenderer.send('pomodoro-start'),
+  pomodoroStop: () => ipcRenderer.send('pomodoro-stop'),
+  snooze: (min) => ipcRenderer.send('snooze', min),
 
   // 桌宠窗口专用
   setIgnoreMouse: (ignore) => ipcRenderer.send('set-ignore-mouse', ignore),
@@ -21,5 +33,6 @@ contextBridge.exposeInMainWorld('api', {
   // 事件订阅
   onFormChanged: (cb) => ipcRenderer.on('form-changed', (e, form) => cb(form)),
   onPetSay: (cb) => ipcRenderer.on('pet-say', (e, msg) => cb(msg)),
-  onStateUpdated: (cb) => ipcRenderer.on('state-updated', (e, s) => cb(s))
+  onStateUpdated: (cb) => ipcRenderer.on('state-updated', (e, s) => cb(s)),
+  onPomodoroTick: (cb) => ipcRenderer.on('pomodoro-tick', (e, p) => cb(p))
 });
