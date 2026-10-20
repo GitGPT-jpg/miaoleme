@@ -43,12 +43,15 @@ html, body {
 /* ---------- 自定义图片（3D 立体效果 + 可行走） ---------- */
 .pet-photo-wrap {
   perspective: 650px;
+  position: relative;
   display: flex;
   justify-content: center;
   align-items: flex-end;
   height: 140px;
 }
 .pet-photo-img {
+  position: absolute;
+  bottom: 0;
   width: 120px;
   height: auto;
   max-height: 130px;
@@ -59,9 +62,12 @@ html, body {
     drop-shadow(0 6px 4px rgba(0,0,0,0.28))
     drop-shadow(0 2px 1px rgba(0,0,0,0.18));
   animation: float3d 3.6s ease-in-out infinite;
-  will-change: transform;
+  will-change: transform, opacity, filter;
   transform-origin: bottom center;
+  /* 状态切换的丝滑过渡：双层交叉淡化 */
+  transition: opacity 0.45s ease, filter 0.45s ease;
 }
+.pet-photo-b { opacity: 0; }
 /* 朝向翻转 */
 #pet.face-left .pet-photo-img { transform: scaleX(-1); }
 
