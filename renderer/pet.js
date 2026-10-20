@@ -33,12 +33,14 @@ function applyForm(form) {
 
 let customIdleUrl = null;
 let customWalkUrl = null;
+let customActions = {};   // { roll, groom, eat, sleep } -> dataURL
 
 function loadCustomImage() {
   window.api.getCustomFrames().then((frames) => {
     if (!frames) return;
     customIdleUrl = frames.idle;
     customWalkUrl = frames.walk || frames.idle;
+    customActions = frames.actions || {};
     if (customIdleUrl) photo.src = customIdleUrl;
   });
 }
@@ -155,17 +157,26 @@ menu.addEventListener('click', (e) => {
 
 // ---------- 来自主进程的事件 ----------
 window.api.onFormChanged((form) => applyForm(form));
-window.api.onPetSay((msg) => say(msg.text, msg.mood || 'normal'));
+window.api.onPetSay((msg) => { if (msg && msg.text) say(msg.text, msg.mood || 'normal'); });
 window.api.onCustomImageChanged(() => loadCustomImage());
 
 // 初始化
 window.api.getState().then((s) => applyForm(s.form || 'custom'));
 
-// ---------- 小范围跑动（仅自定义形态） ----------
+// ---------- 小范围跑动 + 动作（仅自定义形态） ----------
 let home = null;        // 游走的锚点（屏幕坐标）
 let cur = null;         // 当前窗口坐标（本地缓存）
 let wandering = false;
+let acting = false;     // 正在播放动作（打滚/舔毛/吃饭/睡觉）
 let wanderTimer = null;
+let actTimer = null;
+
+const ACTIONS = {
+  roll:  { label: '打个滚~ 看我肚皮！', ms: 3600 },
+  groom: { label: '舔舔毛，保持美丽~', ms: 4000 },
+  eat:   { label: '干饭时间到！🍚', ms: 4500 },
+  sleep: { label: '有点困了…睡会儿 💤', ms: 7000 }
+};
 
 async function ensurePos() {
   const p = await window.api.getWinPos();
@@ -179,9 +190,33 @@ function setWalkFrame(on) {
     if (customWalkUrl) photo.src = customWalkUrl;
   } else {
     pet.classList.remove('walking');
-    if (customIdleUrl) photo.src = customIdleUrl;
+    if (!acting && customIdleUrl) photo.src = customIdleUrl;
   }
 }
+
+// 播放一个动作：定格到对应姿势帧 + 冒泡文字 + 维持数秒后回到站立
+function playAction(name) {
+  const act = ACTIONS[name];
+  const url = customActions && customActions[name];
+  if (!act || !url || currentForm !== 'custom') return;
+  clearTimeout(actTimer);
+  wandering = false;
+  acting = true;
+  pet.classList.remove('walking', 'face-left');
+  pet.classList.add('acting', 'act-' + name);
+  photo.src = url;
+  say(act.label, name === 'sleep' ? 'normal' : 'happy');
+  actTimer = setTimeout(() => {
+    acting = false;
+    pet.classList.remove('acting', 'act-roll', 'act-groom', 'act-eat', 'act-sleep');
+    if (customIdleUrl) photo.src = customIdleUrl;
+    scheduleWander();
+  }, act.ms);
+}
+// 允许从托盘/面板/快捷菜单触发（通过 pet-say 通道传一个特殊指令）
+window.api.onPetSay((msg) => {
+  if (msg && typeof msg.action === 'string') playAction(msg.action);
+});
 
 function scheduleWander() {
   clearTimeout(wanderTimer);
@@ -190,7 +225,13 @@ function scheduleWander() {
 }
 
 async function startWander() {
-  if (currentForm !== 'custom' || dragging) { scheduleWander(); return; }
+  if (currentForm !== 'custom' || dragging || acting) { scheduleWander(); return; }
+  // 一定概率随机做个动作，否则小范围走动
+  const names = Object.keys(customActions || {});
+  if (names.length && Math.random() < 0.5) {
+    playAction(names[Math.floor(Math.random() * names.length)]);
+    return;
+  }
   await ensurePos();
   // 在锚点附近的小范围内选一个目标
   const target = {
@@ -206,7 +247,7 @@ async function startWander() {
 }
 
 function stepTo(target) {
-  if (dragging || currentForm !== 'custom') { stopWander(); return; }
+  if (dragging || currentForm !== 'custom' || acting) { stopWander(); return; }
   const dx = target.x - cur.x;
   const dy = target.y - cur.y;
   const dist = Math.hypot(dx, dy);

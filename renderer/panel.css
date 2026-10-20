@@ -79,6 +79,10 @@ button.mini { padding: 6px 10px; font-size: 12px; background: var(--accent-soft)
 .custom-preview { width: 54px; height: 54px; object-fit: cover; border-radius: 12px; border: 2px solid var(--line); display: none; }
 .custom-preview.show { display: block; }
 
+.actions-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.act-btn { flex: 1 0 40%; background: var(--soft); color: var(--text); padding: 12px 0; }
+.act-btn:hover { background: var(--accent-soft); }
+
 .add-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
 .add-row.center-row { justify-content: center; align-items: center; }
 .add-row input[type="text"] { flex: 1; min-width: 120px; }
