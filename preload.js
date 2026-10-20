@@ -12,6 +12,9 @@ contextBridge.exposeInMainWorld('api', {
 
   // 桌宠窗口专用
   setIgnoreMouse: (ignore) => ipcRenderer.send('set-ignore-mouse', ignore),
+  getWinPos: () => ipcRenderer.invoke('get-win-pos'),
+  setWinPos: (x, y) => ipcRenderer.send('set-win-pos', x, y),
+  saveWinPos: (x, y) => ipcRenderer.send('save-win-pos', x, y),
   petSay: (msg) => ipcRenderer.send('pet-say', msg),
   openPanel: () => ipcRenderer.send('open-panel'),
 

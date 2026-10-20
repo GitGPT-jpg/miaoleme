@@ -15,7 +15,8 @@ const DEFAULT_STATE = {
   meetings: [],           // { id, title, ts }  ts=毫秒时间戳
   ddls: [],               // { id, title, ts }
   notifiedMeetings: [],   // 已提醒过的会议 id
-  notifiedDdls: []        // 已提醒过的 ddl id
+  notifiedDdls: [],       // 已提醒过的 ddl id
+  petPos: null            // 桌宠窗口位置 { x, y }
 };
 
 function loadState() {
@@ -46,11 +47,14 @@ function createPetWindow() {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
   const winW = 220;
   const winH = 260;
+  const pos = (state.petPos && typeof state.petPos.x === 'number')
+    ? state.petPos
+    : { x: width - winW - 20, y: height - winH - 20 };
   petWin = new BrowserWindow({
     width: winW,
     height: winH,
-    x: width - winW - 20,
-    y: height - winH - 20,
+    x: pos.x,
+    y: pos.y,
     frame: false,
     transparent: true,
     resizable: false,
@@ -98,12 +102,14 @@ function openPanel() {
 
 // ---------- 托盘 ----------
 function buildTray() {
-  // 用一个简单的占位图标（空图标也可运行）
-  const icon = nativeImage.createEmpty();
+  // 使用真实图标，否则菜单栏看不到、无法点击
+  let icon = nativeImage.createFromPath(path.join(__dirname, 'assets', 'tray.png'));
+  if (icon.isEmpty()) icon = nativeImage.createFromPath(path.join(__dirname, 'assets', 'icon.png'));
   tray = new Tray(icon);
   tray.setToolTip('零度突破 · 桌宠小助手');
   refreshTrayMenu();
   tray.on('click', openPanel);
+  tray.on('double-click', openPanel);
 }
 
 function refreshTrayMenu() {
@@ -261,6 +267,20 @@ ipcMain.on('set-ignore-mouse', (e, ignore) => {
   if (petWin) petWin.setIgnoreMouseEvents(ignore, { forward: true });
 });
 
+// 手动拖拽桌宠窗口（比 -webkit-app-region 更可靠，且不受穿透影响）
+ipcMain.handle('get-win-pos', () => {
+  if (!petWin) return { x: 0, y: 0 };
+  const [x, y] = petWin.getPosition();
+  return { x, y };
+});
+ipcMain.on('set-win-pos', (e, x, y) => {
+  if (petWin) petWin.setPosition(Math.round(x), Math.round(y));
+});
+ipcMain.on('save-win-pos', (e, x, y) => {
+  state.petPos = { x: Math.round(x), y: Math.round(y) };
+  saveState();
+});
+
 ipcMain.on('pet-say', (e, msg) => petSay(msg.text, msg.mood));
 ipcMain.on('open-panel', openPanel);
 
@@ -269,6 +289,7 @@ app.whenReady().then(() => {
   createPetWindow();
   createPanelWindow();
   buildTray();
+  openPanel(); // 首次启动直接展示功能面板，避免用户找不到入口
   checkReminders();
   setInterval(checkReminders, 20 * 1000); // 每 20 秒检查一次
 });
