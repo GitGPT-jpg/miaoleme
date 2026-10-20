@@ -1,0 +1,15 @@
+{
+  "name": "zerobreak-desktop-pet",
+  "version": "0.1.0",
+  "description": "零度突破 - 桌面端桌宠小助手：喝水/会议/DDL 提醒、吃饭转盘、小游戏",
+  "main": "main.js",
+  "scripts": {
+    "start": "node launch.js",
+    "start:direct": "electron ."
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.0.0"
+  }
+}
