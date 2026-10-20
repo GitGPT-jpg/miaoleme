@@ -4,6 +4,23 @@ const fs = require('fs');
 const { spawn } = require('child_process');
 
 // ---------- 数据持久化 ----------
+// 改名迁移（零度突破 → 喵了么）：把旧应用数据目录的内容搬到新目录，保留用户的桌宠/设置
+(function migrateLegacyUserData() {
+  const current = app.getPath('userData');
+  const legacyNames = ['zerobreak-desktop-pet', '零度突破'];
+  for (const legacy of legacyNames) {
+    const legacyDir = path.join(path.dirname(current), legacy);
+    if (legacyDir === current || !fs.existsSync(legacyDir)) continue;
+    if (fs.existsSync(path.join(current, 'zerobreak-store.json'))) continue; // 新目录已有数据，不覆盖
+    try {
+      fs.cpSync(legacyDir, current, { recursive: true });
+      console.log('[migrate] copied legacy userData from', legacy);
+    } catch (e) {
+      console.error('[migrate] failed', e && e.message);
+    }
+  }
+})();
+
 const STORE_FILE = path.join(app.getPath('userData'), 'zerobreak-store.json');
 
 const DEFAULT_STATE = {
@@ -460,7 +477,7 @@ function createPanelWindow() {
   panelWin = new BrowserWindow({
     width: 460,
     height: 600,
-    title: '零度突破 · 控制台',
+    title: '喵了么 · 控制台',
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -494,7 +511,7 @@ function buildTray() {
   if (!icon2x.isEmpty()) icon.addRepresentation({ scaleFactor: 2, buffer: icon2x.toPNG() });
   if (icon.isEmpty()) icon = nativeImage.createFromPath(path.join(__dirname, 'assets', 'icon.png'));
   tray = new Tray(icon);
-  tray.setToolTip('零度突破 · 桌宠小助手');
+  tray.setToolTip('喵了么 · 桌宠小助手');
   refreshTrayMenu();
   tray.on('click', openPanel);
   tray.on('double-click', openPanel);
