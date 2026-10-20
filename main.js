@@ -158,23 +158,129 @@ const GEN_ACTION_PROMPTS = {
 };
 
 function loadGenConfig() {
-  try {
-    return JSON.parse(fs.readFileSync(path.join(__dirname, 'generation.config.json'), 'utf-8'));
-  } catch (e) {
-    return null;
+  // 优先读取用户数据目录（打包版可用），其次项目目录（开发版）
+  const candidates = [
+    path.join(app.getPath('userData'), 'generation.config.json'),
+    path.join(__dirname, 'generation.config.json')
+  ];
+  for (const p of candidates) {
+    try {
+      const cfg = JSON.parse(fs.readFileSync(p, 'utf-8'));
+      if (cfg && (cfg.comate || cfg.qianfan || cfg.skillScript)) return cfg;
+    } catch (e) { /* try next */ }
   }
+  return null;
 }
 
 function genAvailable() {
   const cfg = loadGenConfig();
-  return !!(cfg && cfg.enabled && cfg.skillScript && fs.existsSync(cfg.skillScript));
+  if (!cfg) return false;
+  if (cfg.provider === 'comate') return !!(cfg.comate && cfg.comate.apiUrl);
+  if (cfg.provider === 'qianfan') return !!(cfg.qianfan && cfg.qianfan.apiUrl && cfg.qianfan.apiKey);
+  // 旧版兼容：skill 脚本
+  return !!(cfg.skillScript && fs.existsSync(cfg.skillScript));
 }
 
-// 调用图像生成脚本，把 srcPath 按给定提示词转成一帧；成功返回输出文件绝对路径，失败返回 null
+// 通用 HTTPS JSON POST
+function httpsJson(url, headers, payload) {
+  return new Promise((resolve, reject) => {
+    const { request } = require('https');
+    const body = JSON.stringify(payload);
+    const req = request(url, {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, headers)
+    }, (res) => {
+      let data = '';
+      res.on('data', (d) => { data += d; });
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) resolve(data);
+        else reject(new Error('HTTP ' + res.statusCode + ' ' + data.slice(0, 200)));
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(180000, () => req.destroy(new Error('timeout')));
+    req.write(body);
+    req.end();
+  });
+}
+
+function mimeOf(p) {
+  const ext = path.extname(p).toLowerCase();
+  if (ext === '.png') return 'image/png';
+  if (ext === '.webp') return 'image/webp';
+  if (ext === '.gif') return 'image/gif';
+  return 'image/jpeg';
+}
+
+// 从候选结果里抽 base64 图片（兼容多种响应结构）
+function extractImageBase64(resp) {
+  try {
+    const j = JSON.parse(resp);
+    const parts = (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [];
+    for (const p of parts) {
+      const d = (p.inlineData || p.inline_data || {}).data;
+      if (d) return d;
+    }
+    for (const it of (j.data || [])) {
+      if (it.b64_image) return it.b64_image;
+      if (it.url) return null; // 需要二次下载，暂不支持
+    }
+  } catch (e) { /* fallthrough */ }
+  return null;
+}
+
+// 调用图像生成服务，把 srcPath 按给定提示词转成一帧；成功返回输出文件绝对路径，失败返回 null
 function genAvatarFrame(srcPath, poseName, prompt) {
-  return new Promise((resolve) => {
+  return new Promise(async (resolve) => {
     const cfg = loadGenConfig();
-    if (!cfg || !cfg.enabled || !fs.existsSync(cfg.skillScript)) return resolve(null);
+    if (!cfg) return resolve(null);
+    const outPath = path.join(app.getPath('userData'), `pet-gen-${poseName}-${Date.now()}.png`);
+    try {
+      let base64 = null;
+      if (cfg.provider === 'comate' && cfg.comate && cfg.comate.apiUrl) {
+        // Comate Nano Banana Pro：Gemini 风格 contents + login-name 头
+        const b64 = fs.readFileSync(srcPath).toString('base64');
+        const payload = {
+          contents: [{ role: 'USER', parts: [
+            { inline_data: { mime_type: mimeOf(srcPath), data: b64 } },
+            { text: prompt }
+          ] }],
+          resolution: '2K',
+          aspectRatio: '1:1'
+        };
+        const resp = await httpsJson(cfg.comate.apiUrl, { 'login-name': cfg.comate.loginName || '' }, payload);
+        base64 = extractImageBase64(resp);
+      } else if (cfg.provider === 'qianfan' && cfg.qianfan && cfg.qianfan.apiUrl && cfg.qianfan.apiKey) {
+        // 百度千帆通用图像生成（OpenAI 兼容）：Bearer API Key
+        const b64 = fs.readFileSync(srcPath).toString('base64');
+        const dataUri = `data:${mimeOf(srcPath)};base64,${b64}`;
+        const payload = {
+          model: cfg.qianfan.model || 'ernie-image-turbo',
+          prompt: `${dataUri}\n${prompt}`,
+          n: 1,
+          size: cfg.qianfan.size || '1024x1024'
+        };
+        const resp = await httpsJson(cfg.qianfan.apiUrl, { 'Authorization': 'Bearer ' + cfg.qianfan.apiKey }, payload);
+        base64 = extractImageBase64(resp);
+      } else if (cfg.skillScript && fs.existsSync(cfg.skillScript)) {
+        // 旧版兼容：调用 skill 脚本
+        return resolve(await genViaScript(cfg, srcPath, poseName, prompt, outPath));
+      } else {
+        return resolve(null);
+      }
+      if (!base64) return resolve(null);
+      fs.writeFileSync(outPath, Buffer.from(base64, 'base64'));
+      return resolve(outPath);
+    } catch (e) {
+      console.error('[gen] error', e && e.message);
+      return resolve(null);
+    }
+  });
+}
+
+// 旧版 skill 脚本通道
+function genViaScript(cfg, srcPath, poseName, prompt, outPath) {
+  return new Promise((resolve) => {
     const out = `pet-gen-${poseName}-${Date.now()}.png`;
     const env = Object.assign({}, process.env, {
       COMATE_USERNAME_ENCRYPTED: cfg.comateUsernameEncrypted || process.env.COMATE_USERNAME_ENCRYPTED || ''
@@ -188,7 +294,7 @@ function genAvatarFrame(srcPath, poseName, prompt) {
     child.on('close', (code) => {
       const line = stdout.trim().split('\n').filter(Boolean).pop();
       if (code === 0 && line && fs.existsSync(line)) resolve(line);
-      else { console.error('[gen] failed', code, stderr.slice(-300)); resolve(null); }
+      else { console.error('[gen] script failed', code, stderr.slice(-300)); resolve(null); }
     });
     child.on('error', (err) => { console.error('[gen] spawn error', err); resolve(null); });
   });
