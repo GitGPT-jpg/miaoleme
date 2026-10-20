@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('api', {
   getState: () => ipcRenderer.invoke('get-state'),
   setForm: (form) => ipcRenderer.invoke('set-form', form),
   getCustomImage: () => ipcRenderer.invoke('get-custom-image'),
+  getCustomFrames: () => ipcRenderer.invoke('get-custom-frames'),
   uploadCustomImage: () => ipcRenderer.invoke('upload-custom-image'),
   setWater: (cfg) => ipcRenderer.invoke('set-water', cfg),
   setSit: (cfg) => ipcRenderer.invoke('set-sit', cfg),

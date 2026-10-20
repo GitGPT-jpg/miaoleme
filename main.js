@@ -75,17 +75,11 @@ function saveState() {
 let state = loadState();
 
 // ---------- 自定义图片 ----------
-const BUNDLED_PHOTO = path.join(__dirname, 'assets', 'pet-photo.jpg');
+const BUNDLED_IDLE = path.join(__dirname, 'assets', 'cat-3d-idle.png');
+const BUNDLED_WALK = path.join(__dirname, 'assets', 'cat-3d-walk.png');
 
-function customImagePath() {
-  if (state.customImage && fs.existsSync(state.customImage)) return state.customImage;
-  if (fs.existsSync(BUNDLED_PHOTO)) return BUNDLED_PHOTO;
-  return null;
-}
-
-function customImageDataUrl() {
-  const p = customImagePath();
-  if (!p) return null;
+function fileToDataUrl(p) {
+  if (!p || !fs.existsSync(p)) return null;
   try {
     const ext = path.extname(p).toLowerCase().replace('.', '');
     const mime = ext === 'png' ? 'image/png'
@@ -96,6 +90,25 @@ function customImageDataUrl() {
   } catch (e) {
     return null;
   }
+}
+
+function customImagePath() {
+  if (state.customImage && fs.existsSync(state.customImage)) return state.customImage;
+  if (fs.existsSync(BUNDLED_IDLE)) return BUNDLED_IDLE;
+  return null;
+}
+
+function customImageDataUrl() {
+  return fileToDataUrl(customImagePath());
+}
+
+// 返回 { idle, walk } 两帧：用户自定义单图时 walk=idle；默认内置 3D 猫有独立行走帧
+function customFrames() {
+  if (state.customImage && fs.existsSync(state.customImage)) {
+    const u = fileToDataUrl(state.customImage);
+    return { idle: u, walk: u };
+  }
+  return { idle: fileToDataUrl(BUNDLED_IDLE), walk: fileToDataUrl(BUNDLED_WALK) || fileToDataUrl(BUNDLED_IDLE) };
 }
 
 
@@ -434,6 +447,7 @@ ipcMain.handle('set-form', (e, form) => { setForm(form); return publicState(); }
 
 // 自定义图片：读取当前图片为 dataURL（受 CSP 限制，用 data: 而非 file://）
 ipcMain.handle('get-custom-image', () => customImageDataUrl());
+ipcMain.handle('get-custom-frames', () => customFrames());
 
 // 上传自定义图片：打开文件选择框，复制到 userData 后记忆
 ipcMain.handle('upload-custom-image', async () => {
@@ -596,7 +610,13 @@ ipcMain.handle('get-win-pos', () => {
   return { x, y };
 });
 ipcMain.on('set-win-pos', (e, x, y) => {
-  if (petWin) petWin.setPosition(Math.round(x), Math.round(y));
+  if (!petWin) return;
+  const [w, h] = petWin.getSize();
+  const disp = screen.getDisplayNearestPoint({ x: Math.round(x), y: Math.round(y) });
+  const b = disp.workArea;
+  const cx = Math.max(b.x, Math.min(Math.round(x), b.x + b.width - w));
+  const cy = Math.max(b.y, Math.min(Math.round(y), b.y + b.height - h));
+  petWin.setPosition(cx, cy);
 });
 ipcMain.on('save-win-pos', (e, x, y) => {
   state.petPos = { x: Math.round(x), y: Math.round(y) };
