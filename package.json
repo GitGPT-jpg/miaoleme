@@ -1,15 +1,49 @@
 {
   "name": "zerobreak-desktop-pet",
-  "version": "0.1.0",
-  "description": "零度突破 - 桌面端桌宠小助手：喝水/会议/DDL 提醒、吃饭转盘、小游戏",
+  "version": "0.2.0",
+  "description": "零度突破 - 桌面端桌宠小助手：喝水/久坐/会议/DDL 提醒、番茄钟、吃饭转盘、小游戏、养成",
   "main": "main.js",
   "scripts": {
     "start": "node launch.js",
-    "start:direct": "electron ."
+    "start:direct": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
   },
   "author": "",
   "license": "MIT",
   "devDependencies": {
-    "electron": "^33.0.0"
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.zerobreak.desktoppet",
+    "productName": "零度突破",
+    "files": [
+      "main.js",
+      "launch.js",
+      "preload.js",
+      "renderer/**/*",
+      "assets/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "assets/icon.png",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "icon": "assets/icon.png",
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "icon": "assets/icon.png",
+      "target": [
+        "AppImage"
+      ]
+    }
   }
 }

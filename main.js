@@ -62,7 +62,10 @@ function loadState() {
 
 function saveState() {
   try {
-    fs.writeFileSync(STORE_FILE, JSON.stringify(state, null, 2), 'utf-8');
+    // 原子写入：先写临时文件再重命名，避免写一半导致存储损坏
+    const tmp = STORE_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(state, null, 2), 'utf-8');
+    fs.renameSync(tmp, STORE_FILE);
   } catch (e) {
     console.error('保存失败', e);
   }
@@ -102,9 +105,17 @@ function createPetWindow() {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
   const winW = 220;
   const winH = 260;
-  const pos = (state.petPos && typeof state.petPos.x === 'number')
-    ? state.petPos
-    : { x: width - winW - 20, y: height - winH - 20 };
+  const defPos = { x: width - winW - 20, y: height - winH - 20 };
+  let pos = defPos;
+  if (state.petPos && typeof state.petPos.x === 'number') {
+    // 校验保存的位置是否仍落在某个显示器内（防止拔掉外接屏后桌宠跑到屏幕外）
+    const p = state.petPos;
+    const onScreen = screen.getAllDisplays().some((d) => {
+      const b = d.bounds;
+      return p.x + winW > b.x && p.x < b.x + b.width && p.y + winH > b.y && p.y < b.y + b.height;
+    });
+    pos = onScreen ? p : defPos;
+  }
   petWin = new BrowserWindow({
     width: winW,
     height: winH,
