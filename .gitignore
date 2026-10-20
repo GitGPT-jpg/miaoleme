@@ -2,3 +2,4 @@ node_modules/
 *.log
 generation.config.json
 dist/
+.popo.json
