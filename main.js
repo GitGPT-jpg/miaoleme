@@ -11,6 +11,7 @@ const DEFAULT_STATE = {
   customImage: null,      // 用户上传的原始图片绝对路径
   customGenIdle: null,    // 由原图在后台生成的 3D 站立帧路径
   customGenWalk: null,    // 由原图在后台生成的 3D 行走帧路径
+  customGenActions: null, // 由原图生成的 3D 动作帧 { roll, groom, eat, sleep } 路径
   water: {
     enabled: true,
     intervalMin: 45,      // 每隔多少分钟提醒喝水
@@ -119,7 +120,14 @@ function customFrames() {
   if (state.customGenIdle && fs.existsSync(state.customGenIdle)) {
     const idle = fileToDataUrl(state.customGenIdle);
     const walk = (state.customGenWalk && fs.existsSync(state.customGenWalk)) ? fileToDataUrl(state.customGenWalk) : idle;
-    return { idle, walk, actions: {} };
+    const actions = {};
+    if (state.customGenActions) {
+      Object.keys(state.customGenActions).forEach((k) => {
+        const p = state.customGenActions[k];
+        if (p && fs.existsSync(p)) { const u = fileToDataUrl(p); if (u) actions[k] = u; }
+      });
+    }
+    return { idle, walk, actions };
   }
   if (state.customImage && fs.existsSync(state.customImage)) {
     const u = fileToDataUrl(state.customImage);
@@ -141,6 +149,14 @@ function customFrames() {
 const GEN_IDLE_PROMPT = 'Turn the person/pet/subject in this photo into an adorable chibi 3D mascot character, Pixar/Blender toy-figure style, big round head, large glossy expressive eyes, soft shading, keep the subject\'s key colors and recognizable features. Full body standing in a cute 3/4 front pose, soft studio lighting with subtle rim light, glossy clean render. Isolated on a FULLY TRANSPARENT background, PNG, subject centered, no ground, no baked shadow, high detail.';
 const GEN_WALK_PROMPT = 'Turn the person/pet/subject in this photo into an adorable chibi 3D mascot character, Pixar/Blender toy-figure style, big round head, large glossy eyes, keep the subject\'s key colors and recognizable features. Full body in a cute MID-WALK stride pose seen from a side 3/4 angle, one foot/paw lifted forward, playful happy expression, soft studio lighting, glossy clean render. Isolated on a FULLY TRANSPARENT background, PNG, subject centered, no ground, no baked shadow, high detail.';
 
+// 动作帧提示词（通用主体，保持同一画风与透明底）
+const GEN_ACTION_PROMPTS = {
+  roll:  'Turn the subject in this photo into an adorable chibi 3D mascot, Pixar/Blender style, keep key colors and features. Pose: rolling on its back playfully, belly up, limbs up in the air, happy relaxed expression. Isolated on a FULLY TRANSPARENT background, PNG, centered, no ground, no baked shadow.',
+  groom: 'Turn the subject in this photo into an adorable chibi 3D mascot, Pixar/Blender style, keep key colors and features. Pose: sitting and grooming itself, cute focused expression. Isolated on a FULLY TRANSPARENT background, PNG, centered, no ground, no baked shadow.',
+  eat:   'Turn the subject in this photo into an adorable chibi 3D mascot, Pixar/Blender style, keep key colors and features. Pose: head lowered eating from a small round food bowl placed in front, happy eating expression. Isolated on a FULLY TRANSPARENT background, PNG, centered, no ground, no baked shadow.',
+  sleep: 'Turn the subject in this photo into an adorable chibi 3D mascot, Pixar/Blender style, keep key colors and features. Pose: lying down curled up sleeping, eyes closed peacefully, small white Zzz symbols floating above head. Isolated on a FULLY TRANSPARENT background, PNG, centered, no ground, no baked shadow.'
+};
+
 function loadGenConfig() {
   try {
     return JSON.parse(fs.readFileSync(path.join(__dirname, 'generation.config.json'), 'utf-8'));
@@ -154,13 +170,12 @@ function genAvailable() {
   return !!(cfg && cfg.enabled && cfg.skillScript && fs.existsSync(cfg.skillScript));
 }
 
-// 调用图像生成脚本，把 srcPath 转成一帧 3D 形象；成功返回输出文件绝对路径，失败返回 null
-function genAvatarFrame(srcPath, pose) {
+// 调用图像生成脚本，把 srcPath 按给定提示词转成一帧；成功返回输出文件绝对路径，失败返回 null
+function genAvatarFrame(srcPath, poseName, prompt) {
   return new Promise((resolve) => {
     const cfg = loadGenConfig();
     if (!cfg || !cfg.enabled || !fs.existsSync(cfg.skillScript)) return resolve(null);
-    const prompt = pose === 'walk' ? GEN_WALK_PROMPT : GEN_IDLE_PROMPT;
-    const out = `pet-gen-${pose}-${Date.now()}.png`;
+    const out = `pet-gen-${poseName}-${Date.now()}.png`;
     const env = Object.assign({}, process.env, {
       COMATE_USERNAME_ENCRYPTED: cfg.comateUsernameEncrypted || process.env.COMATE_USERNAME_ENCRYPTED || ''
     });
@@ -184,7 +199,7 @@ function sendGenStatus(status) {
   if (panelWin) panelWin.webContents.send('gen-status', status);
 }
 
-// 上传后触发：后台生成 idle + walk 两帧 3D 形象，完成即替换
+// 上传后触发：后台依次生成 站立/行走 + 四个动作，共 6 帧 3D 形象，带进度
 async function generate3DFromUpload(srcPath) {
   if (!genAvailable()) {
     sendGenStatus({ state: 'unavailable' });
@@ -193,23 +208,39 @@ async function generate3DFromUpload(srcPath) {
   }
   if (generating) return;
   generating = true;
-  sendGenStatus({ state: 'generating' });
-  petSay('正在把你的照片变成 3D 立体形象，稍等一下下~', 'happy');
+
+  const steps = [
+    { key: 'idle',  prompt: GEN_IDLE_PROMPT, label: '站立' },
+    { key: 'walk',  prompt: GEN_WALK_PROMPT, label: '行走' },
+    { key: 'roll',  prompt: GEN_ACTION_PROMPTS.roll,  label: '打滚' },
+    { key: 'groom', prompt: GEN_ACTION_PROMPTS.groom, label: '舔毛' },
+    { key: 'eat',   prompt: GEN_ACTION_PROMPTS.eat,   label: '吃饭' },
+    { key: 'sleep', prompt: GEN_ACTION_PROMPTS.sleep, label: '睡觉' }
+  ];
+  const total = steps.length;
+  const genActions = {};
+  let okCount = 0;
+
+  petSay('正在把你的照片变成 3D 立体形象，共 6 个姿势，稍等~', 'happy');
+  sendGenStatus({ state: 'generating', done: 0, total, label: '准备中' });
+
   try {
-    const idle = await genAvatarFrame(srcPath, 'idle');
-    if (idle) {
-      state.customGenIdle = idle;
-      saveState();
-      broadcastCustomImage();
-      petSay('3D 形象出炉啦！我在做行走动作…', 'happy');
+    for (let i = 0; i < steps.length; i++) {
+      const s = steps[i];
+      sendGenStatus({ state: 'generating', done: i, total, label: s.label });
+      const out = await genAvatarFrame(srcPath, s.key, s.prompt);
+      if (out) {
+        okCount++;
+        if (s.key === 'idle') state.customGenIdle = out;
+        else if (s.key === 'walk') state.customGenWalk = out;
+        else genActions[s.key] = out;
+        state.customGenActions = Object.assign({}, state.customGenActions || {}, genActions);
+        saveState();
+        broadcastCustomImage();   // 每出一帧就即时应用
+      }
+      sendGenStatus({ state: 'generating', done: i + 1, total, label: s.label });
     }
-    const walk = await genAvatarFrame(srcPath, 'walk');
-    if (walk) {
-      state.customGenWalk = walk;
-      saveState();
-      broadcastCustomImage();
-    }
-    if (idle) { sendGenStatus({ state: 'done' }); petSay('变身完成，喜欢吗~', 'happy'); }
+    if (okCount > 0) { sendGenStatus({ state: 'done', done: total, total }); petSay('全部姿势生成完成，喜欢吗~', 'happy'); }
     else { sendGenStatus({ state: 'failed' }); petSay('3D 生成没成功，先用原图啦', 'normal'); }
   } catch (e) {
     sendGenStatus({ state: 'failed' });
@@ -586,6 +617,7 @@ ipcMain.handle('upload-custom-image', async () => {
     state.customImage = dest;
     state.customGenIdle = null;   // 清除上一次生成的 3D 帧，待重新生成
     state.customGenWalk = null;
+    state.customGenActions = null;
     state.form = 'custom';
     saveState();
     refreshTrayMenu();
