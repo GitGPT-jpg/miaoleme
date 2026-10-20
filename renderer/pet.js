@@ -366,6 +366,7 @@ async function startWander() {
   stepTo(target);
 }
 
+let lastMoveAt = 0;
 function stepTo(target) {
   if (mode !== 'walk' || drag) { stopWander(); return; }
   const dx = target.x - cur.x;
@@ -375,7 +376,12 @@ function stepTo(target) {
   const speed = 1.6;
   cur.x += (dx / dist) * Math.min(speed, dist);
   cur.y += (dy / dist) * Math.min(speed, dist);
-  window.api.setWinPos(cur.x, cur.y);
+  // 位置 IPC 限流到 ~30Hz：视觉依旧平滑，跨进程调用减半
+  const t = performance.now();
+  if (t - lastMoveAt >= 33) {
+    lastMoveAt = t;
+    window.api.setWinPos(Math.round(cur.x), Math.round(cur.y));
+  }
   rafId = requestAnimationFrame(() => stepTo(target));
 }
 
