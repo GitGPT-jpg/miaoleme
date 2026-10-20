@@ -4,6 +4,13 @@ const fs = require('fs');
 const { spawn } = require('child_process');
 const genChildren = new Set();
 
+// 单实例：避免双开导致两只桌宠、重复提醒与并发写状态
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+  return;
+}
+app.on('second-instance', () => { try { openPanel(); } catch (e) { /* not ready yet */ } });
+
 // ---------- 数据持久化 ----------
 // 改名迁移（零度突破 → 喵了么）：把旧应用数据目录的内容搬到新目录，保留用户的桌宠/设置
 (function migrateLegacyUserData() {
