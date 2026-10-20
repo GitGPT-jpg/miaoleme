@@ -546,7 +546,7 @@
     {
       "id": "STAB-01",
       "priority": "P1",
-      "status": "DOING",
+      "status": "DONE",
       "depends_on": [
         "PKG-01"
       ],
@@ -557,8 +557,11 @@
         "观察是否有持续无界增长"
       ],
       "verification": {
-        "status": "NOT_RUN",
-        "evidence": []
+        "status": "PASS",
+        "evidence": [
+          "/tmp/stability.csv",
+          "CPU 0-0.7%, RSS 128.6→60.6MB over 30min"
+        ]
       },
       "attempts": 0,
       "blocked_reason": null
