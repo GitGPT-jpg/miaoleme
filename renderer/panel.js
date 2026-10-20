@@ -40,20 +40,40 @@ document.getElementById('upload-img').addEventListener('click', async () => {
   if (res && res.ok) {
     if (res.dataUrl) { customPreview.src = res.dataUrl; customPreview.classList.add('show'); }
     renderForm('custom');
-    if (res.generating) setGenStatus({ state: 'generating' });
+    if (res.generating) setGenStatus({ state: 'generating', done: 0, total: 6, label: '准备中' });
     window.api.petSay({ text: '换上新形象啦~', mood: 'happy' });
   }
 });
 
 // 后台 3D 生成状态
 const genStatusEl = document.getElementById('gen-status');
+const genProgEl = document.getElementById('gen-progress');
+const genProgFill = document.getElementById('gen-progress-fill');
 function setGenStatus(s) {
   genStatusEl.className = 'gen-status';
-  if (!s) { genStatusEl.textContent = ''; return; }
-  if (s.state === 'generating') { genStatusEl.classList.add('busy'); genStatusEl.textContent = '正在后台生成 3D 形象，请稍候…'; }
-  else if (s.state === 'done') { genStatusEl.classList.add('ok'); genStatusEl.textContent = '✅ 3D 形象已生成并应用'; loadCustomPreview(); }
-  else if (s.state === 'failed') { genStatusEl.classList.add('err'); genStatusEl.textContent = '⚠️ 生成失败，已使用原图'; }
-  else if (s.state === 'unavailable') { genStatusEl.classList.add('err'); genStatusEl.textContent = '⚠️ 未配置生成服务，已使用原图'; }
+  if (!s) { genStatusEl.textContent = ''; genProgEl.classList.remove('show'); return; }
+  if (s.state === 'generating') {
+    genStatusEl.classList.add('busy');
+    const total = s.total || 6;
+    const done = s.done || 0;
+    genStatusEl.textContent = `正在后台生成 3D 形象 ${done}/${total}${s.label ? '（' + s.label + '）' : ''}…`;
+    genProgEl.classList.add('show');
+    genProgFill.style.width = Math.round(done / total * 100) + '%';
+  } else if (s.state === 'done') {
+    genStatusEl.classList.add('ok');
+    genStatusEl.textContent = '✅ 3D 形象（含动作）已全部生成并应用';
+    genProgFill.style.width = '100%';
+    setTimeout(() => genProgEl.classList.remove('show'), 1500);
+    loadCustomPreview();
+  } else if (s.state === 'failed') {
+    genStatusEl.classList.add('err');
+    genStatusEl.textContent = '⚠️ 生成失败，已使用原图';
+    genProgEl.classList.remove('show');
+  } else if (s.state === 'unavailable') {
+    genStatusEl.classList.add('err');
+    genStatusEl.textContent = '⚠️ 未配置生成服务，已使用原图';
+    genProgEl.classList.remove('show');
+  }
 }
 window.api.onGenStatus((s) => setGenStatus(s));
 
