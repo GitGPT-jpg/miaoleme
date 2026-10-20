@@ -542,6 +542,69 @@
       },
       "attempts": 0,
       "blocked_reason": null
+    },
+    {
+      "id": "STAB-01",
+      "priority": "P1",
+      "status": "DOING",
+      "depends_on": [
+        "PKG-01"
+      ],
+      "files": [],
+      "goal": "30 分钟稳定性观察（安装版，每 3 分钟采样 CPU/RSS/线程）",
+      "acceptance": [
+        "记录版本/场景/采样口径",
+        "观察是否有持续无界增长"
+      ],
+      "verification": {
+        "status": "NOT_RUN",
+        "evidence": []
+      },
+      "attempts": 0,
+      "blocked_reason": null
+    },
+    {
+      "id": "UI-01",
+      "priority": "P1",
+      "status": "DONE",
+      "depends_on": [],
+      "files": [
+        "renderer/pet.css",
+        "renderer/panel.html"
+      ],
+      "goal": "原生 UI 渲染核对（窗口 ID 截图）",
+      "acceptance": [
+        "桌宠窗口渲染形象与喂水徽标",
+        "控制台渲染统计/形态/上传区"
+      ],
+      "verification": {
+        "status": "PASS",
+        "evidence": [
+          "/tmp/zb-shots/pet2.png",
+          "/tmp/zb-shots/panelwin.png"
+        ]
+      },
+      "attempts": 0,
+      "blocked_reason": null
+    },
+    {
+      "id": "UI-02",
+      "priority": "P1",
+      "status": "BLOCKED",
+      "depends_on": [],
+      "files": [],
+      "goal": "原生 UI 交互验收（拖拽/穿透/通知/托盘）",
+      "acceptance": [
+        "人工逐项点击验证"
+      ],
+      "verification": {
+        "status": "NOT_RUN",
+        "evidence": [
+          "窗口在另一 Space；未用合成点击避免干扰用户"
+        ]
+      },
+      "attempts": 0,
+      "blocked_reason": "需人工在解锁桌面完成"
     }
   ]
 }
