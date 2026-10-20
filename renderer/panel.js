@@ -449,6 +449,16 @@ reBox.addEventListener('click', () => {
   }
 });
 
+// 喂水 / 喂猫粮
+document.getElementById('feed-water-btn').addEventListener('click', async () => {
+  await window.api.feedWater();
+  flash(document.getElementById('feed-water-btn'), '喂好啦 💧');
+});
+document.getElementById('feed-food-btn').addEventListener('click', async () => {
+  await window.api.feedFood();
+  flash(document.getElementById('feed-food-btn'), '喂好啦 🍚');
+});
+
 // ---------- 初始化 ----------
 function renderAll(s) {
   renderForm(s.form);

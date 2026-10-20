@@ -193,4 +193,38 @@ html, body {
 }
 #menu button:hover { transform: scale(1.15); }
 
+/* ---------- 喂食请求徽标 ---------- */
+#feed-badge {
+  position: absolute;
+  top: 116px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  z-index: 60;
+  -webkit-app-region: no-drag;
+}
+#feed-badge button {
+  border: none;
+  border-radius: 16px;
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  background: linear-gradient(135deg, #6a8dff, #8f6aff);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(106,141,255,0.45);
+  animation: badgePulse 1.4s ease-in-out infinite;
+}
+#feed-badge button:nth-child(2) {
+  background: linear-gradient(135deg, #ff9a4d, #ff6b6b);
+  box-shadow: 0 4px 12px rgba(255,107,107,0.45);
+  animation-delay: 0.7s;
+}
+#feed-badge button:hover { transform: scale(1.08); }
+@keyframes badgePulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.07); }
+}
+
 .hidden { opacity: 0; pointer-events: none; }

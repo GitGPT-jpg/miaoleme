@@ -19,6 +19,8 @@ contextBridge.exposeInMainWorld('api', {
   removeDdl: (id) => ipcRenderer.invoke('remove-ddl', id),
   addIntimacy: (n) => ipcRenderer.invoke('add-intimacy', n),
   drinkWater: () => ipcRenderer.invoke('drink-water'),
+  feedWater: () => ipcRenderer.invoke('feed-water'),
+  feedFood: () => ipcRenderer.invoke('feed-food'),
 
   // 番茄钟 / 贪睡控制
   pomodoroStart: () => ipcRenderer.send('pomodoro-start'),
@@ -38,6 +40,7 @@ contextBridge.exposeInMainWorld('api', {
   onFormChanged: (cb) => ipcRenderer.on('form-changed', (e, form) => cb(form)),
   onPetSay: (cb) => ipcRenderer.on('pet-say', (e, msg) => cb(msg)),
   onCustomImageChanged: (cb) => ipcRenderer.on('custom-image-changed', (e, url) => cb(url)),
+  onFeedState: (cb) => ipcRenderer.on('feed-state', (e, s) => cb(s)),
   onStateUpdated: (cb) => ipcRenderer.on('state-updated', (e, s) => cb(s)),
   onPomodoroTick: (cb) => ipcRenderer.on('pomodoro-tick', (e, p) => cb(p)),
   onGenStatus: (cb) => ipcRenderer.on('gen-status', (e, s) => cb(s))

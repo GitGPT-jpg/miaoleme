@@ -31,6 +31,14 @@ const DEFAULT_STATE = {
     start: '22:00',
     end: '08:00'
   },
+  feed: {                 // 喂养玩法状态
+    waterRequest: false,      // 猫口渴，等主人喂水
+    waterNagTs: 0,            // 上次撒娇时间（没喂就隔几分钟再催）
+    mealRequest: false,       // 到饭点，等主人喂猫粮
+    mealNagTs: 0,
+    lastMealRequestDate: '',  // 当天是否已发过饭点提醒
+    lastMealFedDate: ''       // 当天是否已喂过猫粮
+  },
   theme: 'light',         // light | dark
   autoLaunch: false,      // 开机自启
   stats: {                // 养成/成就
@@ -85,7 +93,8 @@ const BUNDLED_ACTIONS = {
   roll:  path.join(__dirname, 'assets', 'cat-3d-roll.png'),
   groom: path.join(__dirname, 'assets', 'cat-3d-groom.png'),
   eat:   path.join(__dirname, 'assets', 'cat-3d-eat.png'),
-  sleep: path.join(__dirname, 'assets', 'cat-3d-sleep.png')
+  sleep: path.join(__dirname, 'assets', 'cat-3d-sleep.png'),
+  drink: path.join(__dirname, 'assets', 'cat-3d-drink.png')
 };
 
 function fileToDataUrl(p) {
@@ -364,6 +373,12 @@ function broadcastCustomImage() {
   if (panelWin) panelWin.webContents.send('state-updated', publicState());
 }
 
+function broadcastFeedState() {
+  const f = state.feed || {};
+  if (petWin) petWin.webContents.send('feed-state', { water: !!f.waterRequest, meal: !!f.mealRequest });
+  if (panelWin) panelWin.webContents.send('state-updated', publicState());
+}
+
 
 // ---------- 窗口 ----------
 let petWin = null;
@@ -491,8 +506,27 @@ function refreshTrayMenu() {
       }))
     },
     { label: '🍅 开始番茄钟', click: () => startPomodoro() },
-    {
-      label: '🐾 来个动作',
+    { label: '💧 喂水', click: () => {
+        const f = state.feed;
+        f.waterRequest = false; f.waterNagTs = 0;
+        state.water.lastRemindTs = Date.now();
+        state.stats.waterDone = (state.stats.waterDone || 0) + 1;
+        state.stats.intimacy = (state.stats.intimacy || 0) + 1;
+        saveState();
+        broadcastFeedState();
+        if (petWin) petWin.webContents.send('pet-say', { action: 'drink', text: '咕噜咕噜~ 喝饱啦！', mood: 'happy' });
+      } },
+    { label: '🍚 喂猫粮', click: () => {
+        const f = state.feed;
+        const d = new Date();
+        f.mealRequest = false; f.mealNagTs = 0;
+        f.lastMealFedDate = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+        state.stats.intimacy = (state.stats.intimacy || 0) + 2;
+        saveState();
+        broadcastFeedState();
+        if (petWin) petWin.webContents.send('pet-say', { action: 'eat', text: '猫粮好吃~ 主人也要吃饭哦！', mood: 'happy' });
+      } },
+    { label: '🐾 来个动作',
       submenu: [
         { label: '打滚露肚皮', click: () => petWin && petWin.webContents.send('pet-say', { action: 'roll' }) },
         { label: '舔毛', click: () => petWin && petWin.webContents.send('pet-say', { action: 'groom' }) },
@@ -575,16 +609,43 @@ function notify(title, body) {
 function checkReminders() {
   const now = Date.now();
 
-  // 喝水提醒
+  // 喝水提醒 → 猫咪撒娇：主人该喂水啦（喂水后重置周期）
   if (state.water.enabled) {
     const intervalMs = state.water.intervalMin * 60 * 1000;
     if (!state.water.lastRemindTs) state.water.lastRemindTs = now;
-    if (now - state.water.lastRemindTs >= intervalMs) {
-      state.water.lastRemindTs = now;
+    if (now - state.water.lastRemindTs >= intervalMs && !state.feed.waterRequest) {
+      state.feed.waterRequest = true;
+      state.feed.waterNagTs = now;
       saveState();
-      notify('💧 该喝水啦', '起来动一动，补充点水分吧~');
-      petSay('该喝水啦，咕噜咕噜~', 'happy');
+      broadcastFeedState();
+      notify('💧 猫咪口渴了', '猫咪想喝水啦，主人也一起喝一杯吧~（点桌宠的喂水按钮）');
+      petSay('我口渴了…主人也喝点水吧，喂喂我~', 'alert');
+    } else if (state.feed.waterRequest && now - state.feed.waterNagTs > 5 * 60 * 1000) {
+      // 还没喂？过 5 分钟再撒娇一次
+      state.feed.waterNagTs = now;
+      saveState();
+      petSay('还是好渴呀，主人~', 'alert');
     }
+  }
+
+  // 饭点提醒 → 到点讨猫粮：中午 11:30-13:00、晚上 17:30-19:00，各提醒一次（没喂的话窗口内再催）
+  const d = new Date();
+  const hm = d.getHours() * 60 + d.getMinutes();
+  const today = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+  const inLunch = hm >= 11 * 60 + 30 && hm <= 13 * 60;
+  const inDinner = hm >= 17 * 60 + 30 && hm <= 19 * 60;
+  if ((inLunch || inDinner) && state.feed.lastMealRequestDate !== today && state.feed.lastMealFedDate !== today) {
+    state.feed.mealRequest = true;
+    state.feed.mealNagTs = now;
+    state.feed.lastMealRequestDate = today;
+    saveState();
+    broadcastFeedState();
+    notify('🍚 到饭点啦', '该吃饭了~ 记得给猫咪喂猫粮，自己也好好吃饭！');
+    petSay('到饭点啦！主人先去吃饭，顺便喂我吃猫粮~', 'happy');
+  } else if (state.feed.mealRequest && (inLunch || inDinner) && now - state.feed.mealNagTs > 10 * 60 * 1000) {
+    state.feed.mealNagTs = now;
+    saveState();
+    petSay('肚子咕咕叫…还没吃饭吗，主人？', 'alert');
   }
 
   // 久坐提醒
@@ -688,6 +749,7 @@ function publicState() {
   return {
     form: state.form,
     hasCustomImage: !!customImagePath(),
+    feed: state.feed,
     water: state.water,
     sit: state.sit,
     pomodoro: state.pomodoro,
@@ -857,13 +919,46 @@ ipcMain.handle('drink-water', () => {
   return state.stats;
 });
 
+// 喂水：清除讨水状态，桌宠播喝水动作
+ipcMain.handle('feed-water', () => {
+  const f = state.feed;
+  f.waterRequest = false;
+  f.waterNagTs = 0;
+  state.water.lastRemindTs = Date.now();   // 下一轮喝水周期重新计算
+  state.stats.waterDone = (state.stats.waterDone || 0) + 1;
+  state.stats.intimacy = (state.stats.intimacy || 0) + 1;
+  saveState();
+  broadcastFeedState();
+  if (petWin) petWin.webContents.send('pet-say', { action: 'drink', text: '咕噜咕噜~ 猫咪喝饱啦，主人也喝水了吗？', mood: 'happy' });
+  notify('💧 喂水完成', '猫咪喝饱啦，主人也记得喝水~');
+  return publicState();
+});
+
+// 喂猫粮：清除讨粮状态，桌宠播吃饭动作
+ipcMain.handle('feed-food', () => {
+  const f = state.feed;
+  const d = new Date();
+  const today = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+  f.mealRequest = false;
+  f.mealNagTs = 0;
+  f.lastMealFedDate = today;
+  state.stats.intimacy = (state.stats.intimacy || 0) + 2;
+  saveState();
+  broadcastFeedState();
+  if (petWin) petWin.webContents.send('pet-say', { action: 'eat', text: '猫粮好吃~ 主人也要好好吃饭哦！', mood: 'happy' });
+  notify('🍚 喂饭完成', '猫咪吃饱啦，主人也别忘了自己的饭~');
+  return publicState();
+});
+
 // 贪睡：把所有周期提醒顺延 N 分钟
 ipcMain.on('snooze', (e, minutes) => {
   const ms = (parseInt(minutes, 10) || 10) * 60 * 1000;
   const now = Date.now();
   if (state.water.enabled) state.water.lastRemindTs = now + ms - state.water.intervalMin * 60 * 1000;
   if (state.sit.enabled) state.sit.lastRemindTs = now + ms - state.sit.intervalMin * 60 * 1000;
+  if (state.feed) { state.feed.waterRequest = false; state.feed.mealRequest = false; }
   saveState();
+  broadcastFeedState();
   petSay(`好的，${parseInt(minutes, 10) || 10} 分钟后再提醒~`, 'normal');
 });
 
