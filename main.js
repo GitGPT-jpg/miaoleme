@@ -199,7 +199,7 @@ function sendGenStatus(status) {
   if (panelWin) panelWin.webContents.send('gen-status', status);
 }
 
-// 上传后触发：后台依次生成 站立/行走 + 四个动作，共 6 帧 3D 形象，带进度
+// 上传后触发：先单独优先生成「站立」，其余 5 帧并行生成，带进度
 async function generate3DFromUpload(srcPath) {
   if (!genAvailable()) {
     sendGenStatus({ state: 'unavailable' });
@@ -209,37 +209,41 @@ async function generate3DFromUpload(srcPath) {
   if (generating) return;
   generating = true;
 
-  const steps = [
-    { key: 'idle',  prompt: GEN_IDLE_PROMPT, label: '站立' },
-    { key: 'walk',  prompt: GEN_WALK_PROMPT, label: '行走' },
-    { key: 'roll',  prompt: GEN_ACTION_PROMPTS.roll,  label: '打滚' },
-    { key: 'groom', prompt: GEN_ACTION_PROMPTS.groom, label: '舔毛' },
-    { key: 'eat',   prompt: GEN_ACTION_PROMPTS.eat,   label: '吃饭' },
-    { key: 'sleep', prompt: GEN_ACTION_PROMPTS.sleep, label: '睡觉' }
-  ];
-  const total = steps.length;
-  const genActions = {};
+  const total = 6;
+  let done = 0;
   let okCount = 0;
 
+  const bump = (label) => { done++; sendGenStatus({ state: 'generating', done, total, label }); };
+
   petSay('正在把你的照片变成 3D 立体形象，共 6 个姿势，稍等~', 'happy');
-  sendGenStatus({ state: 'generating', done: 0, total, label: '准备中' });
+  sendGenStatus({ state: 'generating', done: 0, total, label: '站立(优先)' });
 
   try {
-    for (let i = 0; i < steps.length; i++) {
-      const s = steps[i];
-      sendGenStatus({ state: 'generating', done: i, total, label: s.label });
+    // 1) 站立帧优先，单独先出，立即应用
+    const idle = await genAvatarFrame(srcPath, 'idle', GEN_IDLE_PROMPT);
+    if (idle) { state.customGenIdle = idle; okCount++; saveState(); broadcastCustomImage(); }
+    bump('站立');
+
+    // 2) 其余 5 帧并行生成，谁先好谁先应用
+    const rest = [
+      { key: 'walk',  prompt: GEN_WALK_PROMPT,          label: '行走' },
+      { key: 'roll',  prompt: GEN_ACTION_PROMPTS.roll,  label: '打滚' },
+      { key: 'groom', prompt: GEN_ACTION_PROMPTS.groom, label: '舔毛' },
+      { key: 'eat',   prompt: GEN_ACTION_PROMPTS.eat,   label: '吃饭' },
+      { key: 'sleep', prompt: GEN_ACTION_PROMPTS.sleep, label: '睡觉' }
+    ];
+    await Promise.all(rest.map(async (s) => {
       const out = await genAvatarFrame(srcPath, s.key, s.prompt);
       if (out) {
         okCount++;
-        if (s.key === 'idle') state.customGenIdle = out;
-        else if (s.key === 'walk') state.customGenWalk = out;
-        else genActions[s.key] = out;
-        state.customGenActions = Object.assign({}, state.customGenActions || {}, genActions);
+        if (s.key === 'walk') state.customGenWalk = out;
+        else state.customGenActions = Object.assign({}, state.customGenActions || {}, { [s.key]: out });
         saveState();
-        broadcastCustomImage();   // 每出一帧就即时应用
+        broadcastCustomImage();   // 每出一帧即时应用
       }
-      sendGenStatus({ state: 'generating', done: i + 1, total, label: s.label });
-    }
+      bump(s.label);
+    }));
+
     if (okCount > 0) { sendGenStatus({ state: 'done', done: total, total }); petSay('全部姿势生成完成，喜欢吗~', 'happy'); }
     else { sendGenStatus({ state: 'failed' }); petSay('3D 生成没成功，先用原图啦', 'normal'); }
   } catch (e) {
