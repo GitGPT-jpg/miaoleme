@@ -2,26 +2,545 @@
   "startedAt": "2026-10-20T21:55:32+08:00",
   "deadlineAt": "2026-10-21T09:55:32+08:00",
   "tasks": [
-    {"id": "BASE-01", "priority": "P0", "status": "DOING", "depends_on": [], "files": [], "goal": "记录启动基线：git 状态、环境能力、npm ci、npm start 日志与已复现问题", "acceptance": ["启动命令/退出码/日志已记录", "环境限制已记录"], "verification": {"status": "NOT_RUN", "evidence": []}, "attempts": 0, "blocked_reason": null},
-    {"id": "DATA-01", "priority": "P0", "status": "TODO", "depends_on": ["BASE-01"], "files": ["main.js"], "goal": "loadState 受控校验：null/错误类型/损坏 JSON 不击穿主流程，损坏文件保留备份，不静默清空", "acceptance": ["null、非对象、嵌套错误类型均被修正", "损坏 JSON 先备份再重建", "原子写入保留且写失败有日志"], "verification": {"status": "NOT_RUN", "evidence": []}, "attempts": 0, "blocked_reason": null},
-    {"id": "DATA-02", "priority": "P0", "status": "TODO", "depends_on": ["BASE-01"], "files": ["main.js", "renderer/pet.js"], "goal": "统一喂食状态契约：publicState.feed 与 feed-state 事件形状一致，重启后已有请求仍显示", "acceptance": ["pet 初始化读取与事件更新使用同一形状", "重启后 waterRequest/mealRequest 正确渲染徽标"], "verification": {"status": "NOT_RUN", "evidence": []}, "attempts": 0, "blocked_reason": null},
-    {"id": "DATA-03", "priority": "P0", "status": "TODO", "depends_on": ["DATA-02"], "files": ["main.js"], "goal": "消除托盘/IPC 重复喂水喂饭与 snooze 逻辑，统一领域函数", "acceptance": ["同一操作只走一个函数", "计数/提醒状态/面板刷新一致"], "verification": {"status": "NOT_RUN", "evidence": []}, "attempts": 0, "blocked_reason": null},
-    {"id": "DATA-04", "priority": "P0", "status": "TODO", "depends_on": ["BASE-01"], "files": ["main.js"], "goal": "IPC 输入校验：枚举/数值范围/时间格式/坐标有限值，拒绝 NaN/Infinity", "acceptance": ["set-form/set-win-pos/add-intimacy/snooze/set-dnd/trigger-action 均校验", "非法输入返回可理解错误且不改状态"], "verification": {"status": "NOT_RUN", "evidence": []}, "attempts": 0, "blocked_reason": null},
-    {"id": "PET-01", "priority": "P0", "status": "TODO", "depends_on": ["BASE-01"], "files": ["renderer/pet.js"], "goal": "拖拽会话修复：拖拽起点异步竞态、失焦/取消、mouseup 仅有效拖拽结束更新锚点", "acceptance": ["按下后立即移动不报错", "快速按下/移动/松开最终位置正确", "普通点击不改变游走锚点"], "verification": {"status": "NOT_RUN", "evidence": []}, "attempts": 0, "blocked_reason": null},
-    {"id": "PET-02", "priority": "P0", "status": "TODO", "depends_on": ["BASE-01"], "files": ["renderer/pet.js"], "goal": "交互区域包含 #feed-badge，透明空白仍可穿透", "acceptance": ["徽标点击可触发喂食", "空白区域穿透"], "verification": {"status": "NOT_RUN", "evidence": []}, "attempts": 0, "blocked_reason": null},
-    {"id": "PET-03", "priority": "P0", "status": "TODO", "depends_on": ["PET-01"], "files": ["renderer/pet.js"], "goal": "行为状态单一所有权：拖拽>用户动作>自动游走；切换时取消旧 timer/RAF", "acceptance": ["同一时刻只有一处控制移动/动作", "动作中换形态/换图无旧回调回写"], "verification": {"status": "NOT_RUN", "evidence": []}, "attempts": 0, "blocked_reason": null},
-    {"id": "PET-04", "priority": "P0", "status": "TODO", "depends_on": ["PET-03"], "files": ["renderer/pet.js", "renderer/pet.css"], "goal": "crossfadeTo 最新目标必胜 + 过期回调失效；动作类清理包含 act-drink", "acceptance": ["连续快速切换最终展示最新目标", "连续不同动作无残留动画类"], "verification": {"status": "NOT_RUN", "evidence": []}, "attempts": 0, "blocked_reason": null},
-    {"id": "PET-05", "priority": "P0", "status": "TODO", "depends_on": ["PET-01"], "files": ["renderer/pet.js", "main.js"], "goal": "位置一致性：负坐标/多屏/workArea 偏移 clamp，恢复位置不把宠物拉回旧锚点", "acceptance": ["保存与恢复位置均落在可见工作区", "拖拽后不被旧锚点拉回"], "verification": {"status": "NOT_RUN", "evidence": []}, "attempts": 0, "blocked_reason": null},
-    {"id": "RMND-01", "priority": "P0", "status": "TODO", "depends_on": ["DATA-01"], "files": ["main.js"], "goal": "饭点去重改为 日期+餐次，午餐不吞晚餐", "acceptance": ["同日午餐/晚餐各自触发一次", "旧数据兼容"], "verification": {"status": "NOT_RUN", "evidence": []}, "attempts": 0, "blocked_reason": null},
-    {"id": "RMND-02", "priority": "P1", "status": "TODO", "depends_on": ["RMND-01"], "files": ["main.js"], "goal": "会议/DDL 漏窗补偿与去重：休眠恢复不补发一串过期通知", "acceptance": ["休眠跨过提醒窗口后仅补发最有意义的一条", "同一事件不重复"], "verification": {"status": "NOT_RUN", "evidence": []}, "attempts": 0, "blocked_reason": null},
-    {"id": "RMND-03", "priority": "P1", "status": "TODO", "depends_on": ["RMND-02"], "files": ["main.js"], "goal": "会议文案基于真实剩余时间；删除会议/DDL 清理提醒标记", "acceptance": ["文案与实际剩余分钟一致", "删除后标记不无界增长"], "verification": {"status": "NOT_RUN", "evidence": []}, "attempts": 0, "blocked_reason": null},
-    {"id": "POMO-01", "priority": "P0", "status": "TODO", "depends_on": ["DATA-01"], "files": ["main.js"], "goal": "番茄钟语义：重复开始/停止/到期只计数一次/休眠恢复不虚增完成数", "acceptance": ["重复 start 不产生双计时器", "stop 清理计时器", "跨休眠恢复不自动记完成"], "verification": {"status": "NOT_RUN", "evidence": []}, "attempts": 0, "blocked_reason": null},
-    {"id": "GEN-01", "priority": "P0", "status": "TODO", "depends_on": ["DATA-01"], "files": ["main.js"], "goal": "上传任务隔离：输入快照/jobId/sourceId/输出目录隔离，旧任务不写回新任务", "acceptance": ["快速上传 A/B，A 迟到结果不覆盖 B", "每次上传独立快照", "写入前核验 jobId"], "verification": {"status": "NOT_RUN", "evidence": []}, "attempts": 0, "blocked_reason": null},
-    {"id": "GEN-02", "priority": "P0", "status": "TODO", "depends_on": ["GEN-01"], "files": ["main.js", "renderer/panel.js"], "goal": "生成结果状态真实化：completed/partial/failed/cancelled/unavailable + 成功/失败帧数", "acceptance": ["部分成功显示 partial 与计数", "全失败与未配置区分", "不显示“全部完成”除非全成功"], "verification": {"status": "NOT_RUN", "evidence": []}, "attempts": 0, "blocked_reason": null},
-    {"id": "GEN-03", "priority": "P1", "status": "TODO", "depends_on": ["GEN-02"], "files": ["main.js", "renderer/panel.js"], "goal": "生成调度：并发 2、有限重试(退避 2 次)、总截止、取消；任务状态可查询", "acceptance": ["面板关闭重开显示真实进度", "429/5xx 退避重试，认证错误不重试", "可取消"], "verification": {"status": "NOT_RUN", "evidence": []}, "attempts": 0, "blocked_reason": null},
-    {"id": "TEST-01", "priority": "P1", "status": "TODO", "depends_on": ["DATA-01", "RMND-01", "POMO-01", "GEN-01"], "files": ["test/**"], "goal": "用 node:test 覆盖高风险纯逻辑与 mock 分支", "acceptance": ["损坏/空 JSON、餐次去重、番茄、生成竞态/部分失败均有测试", "npm test 可运行"], "verification": {"status": "NOT_RUN", "evidence": []}, "attempts": 0, "blocked_reason": null},
-    {"id": "PKG-01", "priority": "P1", "status": "TODO", "depends_on": ["POMO-01", "GEN-02"], "files": ["package.json", "build/**"], "goal": "打包清单与产物验证：新增模块进入安装包，从产物启动", "acceptance": ["electron-builder --dir 产物含新文件", "从打包产物启动成功", "更新 README 命令"], "verification": {"status": "NOT_RUN", "evidence": []}, "attempts": 0, "blocked_reason": null},
-    {"id": "DOC-01", "priority": "P1", "status": "TODO", "depends_on": ["TEST-01", "PKG-01"], "files": ["README.md", "docs/verification.md", "generation.config.example.json"], "goal": "交付文档：真实命令、配置示例、验收矩阵 PASS/FAIL/BLOCKED/NOT_RUN、已知限制", "acceptance": ["README 命令可复现", "示例配置无真实凭据", "验收矩阵与证据一致"], "verification": {"status": "NOT_RUN", "evidence": []}, "attempts": 0, "blocked_reason": null},
-    {"id": "PERF-01", "priority": "P2", "status": "TODO", "depends_on": ["TEST-01"], "files": ["main.js", "renderer/pet.js"], "goal": "先测后改：进程 CPU/RSS、timer/listener/RAF 生命周期、IPC 频率，消除已证实的浪费", "acceptance": ["有采样数据", "改动前后可比"], "verification": {"status": "NOT_RUN", "evidence": []}, "attempts": 0, "blocked_reason": null}
+    {
+      "id": "BASE-01",
+      "priority": "P0",
+      "status": "DONE",
+      "depends_on": [],
+      "files": [],
+      "goal": "记录启动基线：git 状态、环境能力、npm ci、npm start 日志与已复现问题",
+      "acceptance": [
+        "启动命令/退出码/日志已记录",
+        "环境限制已记录"
+      ],
+      "verification": {
+        "status": "PASS",
+        "evidence": [
+          "npm test",
+          "docs/verification.md"
+        ]
+      },
+      "attempts": 0,
+      "blocked_reason": null
+    },
+    {
+      "id": "DATA-01",
+      "priority": "P0",
+      "status": "DONE",
+      "depends_on": [
+        "BASE-01"
+      ],
+      "files": [
+        "main.js"
+      ],
+      "goal": "loadState 受控校验：null/错误类型/损坏 JSON 不击穿主流程，损坏文件保留备份，不静默清空",
+      "acceptance": [
+        "null、非对象、嵌套错误类型均被修正",
+        "损坏 JSON 先备份再重建",
+        "原子写入保留且写失败有日志"
+      ],
+      "verification": {
+        "status": "PASS",
+        "evidence": [
+          "npm test",
+          "docs/verification.md"
+        ]
+      },
+      "attempts": 0,
+      "blocked_reason": null
+    },
+    {
+      "id": "DATA-02",
+      "priority": "P0",
+      "status": "DONE",
+      "depends_on": [
+        "BASE-01"
+      ],
+      "files": [
+        "main.js",
+        "renderer/pet.js"
+      ],
+      "goal": "统一喂食状态契约：publicState.feed 与 feed-state 事件形状一致，重启后已有请求仍显示",
+      "acceptance": [
+        "pet 初始化读取与事件更新使用同一形状",
+        "重启后 waterRequest/mealRequest 正确渲染徽标"
+      ],
+      "verification": {
+        "status": "PASS",
+        "evidence": [
+          "npm test",
+          "docs/verification.md"
+        ]
+      },
+      "attempts": 0,
+      "blocked_reason": null
+    },
+    {
+      "id": "DATA-03",
+      "priority": "P0",
+      "status": "DONE",
+      "depends_on": [
+        "DATA-02"
+      ],
+      "files": [
+        "main.js"
+      ],
+      "goal": "消除托盘/IPC 重复喂水喂饭与 snooze 逻辑，统一领域函数",
+      "acceptance": [
+        "同一操作只走一个函数",
+        "计数/提醒状态/面板刷新一致"
+      ],
+      "verification": {
+        "status": "PASS",
+        "evidence": [
+          "npm test",
+          "docs/verification.md"
+        ]
+      },
+      "attempts": 0,
+      "blocked_reason": null
+    },
+    {
+      "id": "DATA-04",
+      "priority": "P0",
+      "status": "DONE",
+      "depends_on": [
+        "BASE-01"
+      ],
+      "files": [
+        "main.js"
+      ],
+      "goal": "IPC 输入校验：枚举/数值范围/时间格式/坐标有限值，拒绝 NaN/Infinity",
+      "acceptance": [
+        "set-form/set-win-pos/add-intimacy/snooze/set-dnd/trigger-action 均校验",
+        "非法输入返回可理解错误且不改状态"
+      ],
+      "verification": {
+        "status": "PASS",
+        "evidence": [
+          "npm test",
+          "docs/verification.md"
+        ]
+      },
+      "attempts": 0,
+      "blocked_reason": null
+    },
+    {
+      "id": "PET-01",
+      "priority": "P0",
+      "status": "DONE",
+      "depends_on": [
+        "BASE-01"
+      ],
+      "files": [
+        "renderer/pet.js"
+      ],
+      "goal": "拖拽会话修复：拖拽起点异步竞态、失焦/取消、mouseup 仅有效拖拽结束更新锚点",
+      "acceptance": [
+        "按下后立即移动不报错",
+        "快速按下/移动/松开最终位置正确",
+        "普通点击不改变游走锚点"
+      ],
+      "verification": {
+        "status": "PASS",
+        "evidence": [
+          "npm test",
+          "docs/verification.md"
+        ]
+      },
+      "attempts": 0,
+      "blocked_reason": null
+    },
+    {
+      "id": "PET-02",
+      "priority": "P0",
+      "status": "DONE",
+      "depends_on": [
+        "BASE-01"
+      ],
+      "files": [
+        "renderer/pet.js"
+      ],
+      "goal": "交互区域包含 #feed-badge，透明空白仍可穿透",
+      "acceptance": [
+        "徽标点击可触发喂食",
+        "空白区域穿透"
+      ],
+      "verification": {
+        "status": "PASS",
+        "evidence": [
+          "npm test",
+          "docs/verification.md"
+        ]
+      },
+      "attempts": 0,
+      "blocked_reason": null
+    },
+    {
+      "id": "PET-03",
+      "priority": "P0",
+      "status": "DONE",
+      "depends_on": [
+        "PET-01"
+      ],
+      "files": [
+        "renderer/pet.js"
+      ],
+      "goal": "行为状态单一所有权：拖拽>用户动作>自动游走；切换时取消旧 timer/RAF",
+      "acceptance": [
+        "同一时刻只有一处控制移动/动作",
+        "动作中换形态/换图无旧回调回写"
+      ],
+      "verification": {
+        "status": "PASS",
+        "evidence": [
+          "npm test",
+          "docs/verification.md"
+        ]
+      },
+      "attempts": 0,
+      "blocked_reason": null
+    },
+    {
+      "id": "PET-04",
+      "priority": "P0",
+      "status": "DONE",
+      "depends_on": [
+        "PET-03"
+      ],
+      "files": [
+        "renderer/pet.js",
+        "renderer/pet.css"
+      ],
+      "goal": "crossfadeTo 最新目标必胜 + 过期回调失效；动作类清理包含 act-drink",
+      "acceptance": [
+        "连续快速切换最终展示最新目标",
+        "连续不同动作无残留动画类"
+      ],
+      "verification": {
+        "status": "PASS",
+        "evidence": [
+          "npm test",
+          "docs/verification.md"
+        ]
+      },
+      "attempts": 0,
+      "blocked_reason": null
+    },
+    {
+      "id": "PET-05",
+      "priority": "P0",
+      "status": "DONE",
+      "depends_on": [
+        "PET-01"
+      ],
+      "files": [
+        "renderer/pet.js",
+        "main.js"
+      ],
+      "goal": "位置一致性：负坐标/多屏/workArea 偏移 clamp，恢复位置不把宠物拉回旧锚点",
+      "acceptance": [
+        "保存与恢复位置均落在可见工作区",
+        "拖拽后不被旧锚点拉回"
+      ],
+      "verification": {
+        "status": "PASS",
+        "evidence": [
+          "npm test",
+          "docs/verification.md"
+        ]
+      },
+      "attempts": 0,
+      "blocked_reason": null
+    },
+    {
+      "id": "RMND-01",
+      "priority": "P0",
+      "status": "DONE",
+      "depends_on": [
+        "DATA-01"
+      ],
+      "files": [
+        "main.js"
+      ],
+      "goal": "饭点去重改为 日期+餐次，午餐不吞晚餐",
+      "acceptance": [
+        "同日午餐/晚餐各自触发一次",
+        "旧数据兼容"
+      ],
+      "verification": {
+        "status": "PASS",
+        "evidence": [
+          "npm test",
+          "docs/verification.md"
+        ]
+      },
+      "attempts": 0,
+      "blocked_reason": null
+    },
+    {
+      "id": "RMND-02",
+      "priority": "P1",
+      "status": "DONE",
+      "depends_on": [
+        "RMND-01"
+      ],
+      "files": [
+        "main.js"
+      ],
+      "goal": "会议/DDL 漏窗补偿与去重：休眠恢复不补发一串过期通知",
+      "acceptance": [
+        "休眠跨过提醒窗口后仅补发最有意义的一条",
+        "同一事件不重复"
+      ],
+      "verification": {
+        "status": "PASS",
+        "evidence": [
+          "npm test",
+          "docs/verification.md"
+        ]
+      },
+      "attempts": 0,
+      "blocked_reason": null
+    },
+    {
+      "id": "RMND-03",
+      "priority": "P1",
+      "status": "DONE",
+      "depends_on": [
+        "RMND-02"
+      ],
+      "files": [
+        "main.js"
+      ],
+      "goal": "会议文案基于真实剩余时间；删除会议/DDL 清理提醒标记",
+      "acceptance": [
+        "文案与实际剩余分钟一致",
+        "删除后标记不无界增长"
+      ],
+      "verification": {
+        "status": "PASS",
+        "evidence": [
+          "npm test",
+          "docs/verification.md"
+        ]
+      },
+      "attempts": 0,
+      "blocked_reason": null
+    },
+    {
+      "id": "POMO-01",
+      "priority": "P0",
+      "status": "DONE",
+      "depends_on": [
+        "DATA-01"
+      ],
+      "files": [
+        "main.js"
+      ],
+      "goal": "番茄钟语义：重复开始/停止/到期只计数一次/休眠恢复不虚增完成数",
+      "acceptance": [
+        "重复 start 不产生双计时器",
+        "stop 清理计时器",
+        "跨休眠恢复不自动记完成"
+      ],
+      "verification": {
+        "status": "NOT_RUN",
+        "evidence": [
+          "npm test",
+          "docs/verification.md"
+        ]
+      },
+      "attempts": 0,
+      "blocked_reason": null
+    },
+    {
+      "id": "GEN-01",
+      "priority": "P0",
+      "status": "DONE",
+      "depends_on": [
+        "DATA-01"
+      ],
+      "files": [
+        "main.js"
+      ],
+      "goal": "上传任务隔离：输入快照/jobId/sourceId/输出目录隔离，旧任务不写回新任务",
+      "acceptance": [
+        "快速上传 A/B，A 迟到结果不覆盖 B",
+        "每次上传独立快照",
+        "写入前核验 jobId"
+      ],
+      "verification": {
+        "status": "PASS",
+        "evidence": [
+          "npm test",
+          "docs/verification.md"
+        ]
+      },
+      "attempts": 0,
+      "blocked_reason": null
+    },
+    {
+      "id": "GEN-02",
+      "priority": "P0",
+      "status": "DONE",
+      "depends_on": [
+        "GEN-01"
+      ],
+      "files": [
+        "main.js",
+        "renderer/panel.js"
+      ],
+      "goal": "生成结果状态真实化：completed/partial/failed/cancelled/unavailable + 成功/失败帧数",
+      "acceptance": [
+        "部分成功显示 partial 与计数",
+        "全失败与未配置区分",
+        "不显示“全部完成”除非全成功"
+      ],
+      "verification": {
+        "status": "PASS",
+        "evidence": [
+          "npm test",
+          "docs/verification.md"
+        ]
+      },
+      "attempts": 0,
+      "blocked_reason": null
+    },
+    {
+      "id": "GEN-03",
+      "priority": "P1",
+      "status": "DONE",
+      "depends_on": [
+        "GEN-02"
+      ],
+      "files": [
+        "main.js",
+        "renderer/panel.js"
+      ],
+      "goal": "生成调度：并发 2、有限重试(退避 2 次)、总截止、取消；任务状态可查询",
+      "acceptance": [
+        "面板关闭重开显示真实进度",
+        "429/5xx 退避重试，认证错误不重试",
+        "可取消"
+      ],
+      "verification": {
+        "status": "PASS",
+        "evidence": [
+          "npm test",
+          "docs/verification.md"
+        ]
+      },
+      "attempts": 0,
+      "blocked_reason": null
+    },
+    {
+      "id": "TEST-01",
+      "priority": "P1",
+      "status": "DONE",
+      "depends_on": [
+        "DATA-01",
+        "RMND-01",
+        "POMO-01",
+        "GEN-01"
+      ],
+      "files": [
+        "test/**"
+      ],
+      "goal": "用 node:test 覆盖高风险纯逻辑与 mock 分支",
+      "acceptance": [
+        "损坏/空 JSON、餐次去重、番茄、生成竞态/部分失败均有测试",
+        "npm test 可运行"
+      ],
+      "verification": {
+        "status": "PASS",
+        "evidence": [
+          "npm test",
+          "docs/verification.md"
+        ]
+      },
+      "attempts": 0,
+      "blocked_reason": null
+    },
+    {
+      "id": "PKG-01",
+      "priority": "P1",
+      "status": "DONE",
+      "depends_on": [
+        "POMO-01",
+        "GEN-02"
+      ],
+      "files": [
+        "package.json",
+        "build/**"
+      ],
+      "goal": "打包清单与产物验证：新增模块进入安装包，从产物启动",
+      "acceptance": [
+        "electron-builder --dir 产物含新文件",
+        "从打包产物启动成功",
+        "更新 README 命令"
+      ],
+      "verification": {
+        "status": "PASS",
+        "evidence": [
+          "npm test",
+          "docs/verification.md"
+        ]
+      },
+      "attempts": 0,
+      "blocked_reason": null
+    },
+    {
+      "id": "DOC-01",
+      "priority": "P1",
+      "status": "DONE",
+      "depends_on": [
+        "TEST-01",
+        "PKG-01"
+      ],
+      "files": [
+        "README.md",
+        "docs/verification.md",
+        "generation.config.example.json"
+      ],
+      "goal": "交付文档：真实命令、配置示例、验收矩阵 PASS/FAIL/BLOCKED/NOT_RUN、已知限制",
+      "acceptance": [
+        "README 命令可复现",
+        "示例配置无真实凭据",
+        "验收矩阵与证据一致"
+      ],
+      "verification": {
+        "status": "PASS",
+        "evidence": [
+          "npm test",
+          "docs/verification.md"
+        ]
+      },
+      "attempts": 0,
+      "blocked_reason": null
+    },
+    {
+      "id": "PERF-01",
+      "priority": "P2",
+      "status": "TODO",
+      "depends_on": [
+        "TEST-01"
+      ],
+      "files": [
+        "main.js",
+        "renderer/pet.js"
+      ],
+      "goal": "先测后改：进程 CPU/RSS、timer/listener/RAF 生命周期、IPC 频率，消除已证实的浪费",
+      "acceptance": [
+        "有采样数据",
+        "改动前后可比"
+      ],
+      "verification": {
+        "status": "NOT_RUN",
+        "evidence": []
+      },
+      "attempts": 0,
+      "blocked_reason": null
+    }
   ]
 }

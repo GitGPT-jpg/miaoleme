@@ -131,9 +131,10 @@ document.getElementById('water-save').addEventListener('click', async () => {
   });
   flash(document.getElementById('water-save'), '已保存');
 });
+function setIfIdle(el, v) { if (document.activeElement !== el) el.value = v; }
 function renderWater(water) {
   waterEnabled.checked = !!water.enabled;
-  waterInterval.value = water.intervalMin;
+  setIfIdle(waterInterval, water.intervalMin);
 }
 
 function flash(btn, text) {
@@ -160,8 +161,10 @@ function renderMeetings(list) {
   const now = Date.now();
   list.forEach((m) => {
     const li = document.createElement('li');
-    if (m.ts - now < 30 * 60 * 1000 && m.ts > now) li.classList.add('soon');
-    li.innerHTML = `<div class="meta"><span class="t">${escapeHtml(m.title)}</span><span class="d">${fmt(m.ts)}</span></div>`;
+    const past = m.ts <= now;
+    if (past) li.classList.add('past');
+    else if (m.ts - now < 30 * 60 * 1000) li.classList.add('soon');
+    li.innerHTML = `<div class="meta"><span class="t">${escapeHtml(m.title)}</span><span class="d">${fmt(m.ts)}${past ? ' · 已过' : ''}</span></div>`;
     const del = document.createElement('button');
     del.className = 'del'; del.textContent = '删除';
     del.onclick = async () => renderMeetings((await window.api.removeMeeting(m.id)).meetings);
@@ -188,7 +191,9 @@ function renderDdls(list) {
   const now = Date.now();
   list.forEach((d) => {
     const li = document.createElement('li');
-    if (d.ts - now < 24 * 60 * 60 * 1000 && d.ts > now) li.classList.add('soon');
+    const expired = d.ts <= now;
+    if (expired) li.classList.add('past');
+    else if (d.ts - now < 24 * 60 * 60 * 1000) li.classList.add('soon');
     const left = d.ts - now;
     const leftTxt = left > 0 ? `剩 ${Math.ceil(left / 3600000)} 小时` : '已到期';
     li.innerHTML = `<div class="meta"><span class="t">${escapeHtml(d.title)}</span><span class="d">${fmt(d.ts)} · ${leftTxt}</span></div>`;
@@ -380,7 +385,7 @@ document.getElementById('sit-save').addEventListener('click', async () => {
 function renderSit(sit) {
   if (!sit) return;
   sitEnabled.checked = !!sit.enabled;
-  sitInterval.value = sit.intervalMin;
+  setIfIdle(sitInterval, sit.intervalMin);
 }
 
 // ---------- 免打扰 ----------
@@ -394,13 +399,16 @@ document.getElementById('dnd-save').addEventListener('click', async () => {
 function renderDnd(dnd) {
   if (!dnd) return;
   dndEnabled.checked = !!dnd.enabled;
-  dndStart.value = dnd.start;
-  dndEnd.value = dnd.end;
+  setIfIdle(dndStart, dnd.start);
+  setIfIdle(dndEnd, dnd.end);
 }
 
 // ---------- 开机自启 ----------
 document.getElementById('autolaunch').addEventListener('change', async (e) => {
   await window.api.setAutoLaunch(e.target.checked);
+});
+document.getElementById('quiet-mode').addEventListener('change', async (e) => {
+  await window.api.setQuiet(e.target.checked);
 });
 
 // PLACEHOLDER_POMO_GAMES
@@ -512,8 +520,9 @@ function renderAll(s) {
   renderDnd(s.dnd);
   renderStats(s.stats);
   applyTheme(s.theme || 'light');
-  if (s.pomodoro) { pomoWork.value = s.pomodoro.workMin; pomoBreak.value = s.pomodoro.breakMin; }
+  if (s.pomodoro) { setIfIdle(pomoWork, s.pomodoro.workMin); setIfIdle(pomoBreak, s.pomodoro.breakMin); }
   document.getElementById('autolaunch').checked = !!s.autoLaunch;
+  document.getElementById('quiet-mode').checked = !!s.quiet;
   renderMeetings(s.meetings);
   renderDdls(s.ddls);
 }
