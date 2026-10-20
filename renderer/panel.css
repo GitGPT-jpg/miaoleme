@@ -72,8 +72,12 @@ button.mini { padding: 6px 10px; font-size: 12px; background: var(--accent-soft)
 
 .forms { display: flex; gap: 10px; }
 .form-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 0; background: var(--soft); color: var(--text); border: 2px solid transparent; }
-.form-btn span { font-size: 34px; }
+.form-btn span { font-size: 30px; }
 .form-btn.active { border-color: var(--brand); background: var(--accent-soft); }
+
+.upload-row { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+.custom-preview { width: 54px; height: 54px; object-fit: cover; border-radius: 12px; border: 2px solid var(--line); display: none; }
+.custom-preview.show { display: block; }
 
 .add-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
 .add-row.center-row { justify-content: center; align-items: center; }

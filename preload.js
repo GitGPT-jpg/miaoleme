@@ -4,6 +4,8 @@ contextBridge.exposeInMainWorld('api', {
   // 查询 / 设置
   getState: () => ipcRenderer.invoke('get-state'),
   setForm: (form) => ipcRenderer.invoke('set-form', form),
+  getCustomImage: () => ipcRenderer.invoke('get-custom-image'),
+  uploadCustomImage: () => ipcRenderer.invoke('upload-custom-image'),
   setWater: (cfg) => ipcRenderer.invoke('set-water', cfg),
   setSit: (cfg) => ipcRenderer.invoke('set-sit', cfg),
   setDnd: (cfg) => ipcRenderer.invoke('set-dnd', cfg),
@@ -33,6 +35,7 @@ contextBridge.exposeInMainWorld('api', {
   // 事件订阅
   onFormChanged: (cb) => ipcRenderer.on('form-changed', (e, form) => cb(form)),
   onPetSay: (cb) => ipcRenderer.on('pet-say', (e, msg) => cb(msg)),
+  onCustomImageChanged: (cb) => ipcRenderer.on('custom-image-changed', (e, url) => cb(url)),
   onStateUpdated: (cb) => ipcRenderer.on('state-updated', (e, s) => cb(s)),
   onPomodoroTick: (cb) => ipcRenderer.on('pomodoro-tick', (e, p) => cb(p))
 });

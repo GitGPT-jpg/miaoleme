@@ -40,6 +40,52 @@ html, body {
   transform-origin: bottom center;
 }
 
+/* ---------- 自定义图片（3D 立牌效果） ---------- */
+.pet-photo-wrap {
+  perspective: 650px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  height: 140px;
+}
+.pet-photo-img {
+  width: 118px;
+  height: 118px;
+  object-fit: cover;
+  border-radius: 22px;
+  border: 3px solid rgba(255,255,255,0.9);
+  transform-style: preserve-3d;
+  /* 多层投影营造立体悬浮感 */
+  box-shadow:
+    0 2px 2px rgba(0,0,0,0.12),
+    0 10px 16px rgba(0,0,0,0.28),
+    0 22px 30px rgba(0,0,0,0.22);
+  animation: float3d 4s ease-in-out infinite;
+  will-change: transform;
+}
+@keyframes float3d {
+  0%   { transform: translateY(0)    rotateX(6deg)  rotateY(-10deg); }
+  25%  { transform: translateY(-6px) rotateX(3deg)  rotateY(0deg); }
+  50%  { transform: translateY(-10px) rotateX(0deg) rotateY(10deg); }
+  75%  { transform: translateY(-6px) rotateX(3deg)  rotateY(0deg); }
+  100% { transform: translateY(0)    rotateX(6deg)  rotateY(-10deg); }
+}
+/* 自定义形态下隐藏 emoji 脸；非自定义形态隐藏照片 */
+#pet.form-custom .pet-face { display: none; }
+#pet:not(.form-custom) .pet-photo-wrap { display: none; }
+#pet.form-custom .pet-shadow { width: 92px; height: 16px; margin-top: 2px; }
+/* 情绪：开心放大、警告抖动（作用于照片） */
+#pet.form-custom.mood-happy .pet-photo-img { animation: float3dHappy 1.2s ease-in-out infinite; }
+#pet.form-custom.mood-alert .pet-photo-img { animation: float3dAlert 0.3s ease-in-out infinite; }
+@keyframes float3dHappy {
+  0%,100% { transform: translateY(-6px) rotateY(-12deg) scale(1.03); }
+  50%     { transform: translateY(-14px) rotateY(12deg) scale(1.06); }
+}
+@keyframes float3dAlert {
+  0%,100% { transform: translateX(-4px) rotateY(-6deg); }
+  50%     { transform: translateX(4px) rotateY(6deg); }
+}
+
 .pet-shadow {
   width: 80px;
   height: 14px;

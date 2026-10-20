@@ -27,6 +27,23 @@ function renderForm(form) {
   formBtns.forEach((b) => b.classList.toggle('active', b.dataset.form === form));
 }
 
+// 自定义图片上传 + 预览
+const customPreview = document.getElementById('custom-preview');
+function loadCustomPreview() {
+  window.api.getCustomImage().then((url) => {
+    if (url) { customPreview.src = url; customPreview.classList.add('show'); }
+    else customPreview.classList.remove('show');
+  });
+}
+document.getElementById('upload-img').addEventListener('click', async () => {
+  const res = await window.api.uploadCustomImage();
+  if (res && res.ok) {
+    if (res.dataUrl) { customPreview.src = res.dataUrl; customPreview.classList.add('show'); }
+    renderForm('custom');
+    window.api.petSay({ text: '换上新形象啦，好看吗~', mood: 'happy' });
+  }
+});
+
 // ---------- 喝水 ----------
 const waterEnabled = document.getElementById('water-enabled');
 const waterInterval = document.getElementById('water-interval');
@@ -397,6 +414,7 @@ reBox.addEventListener('click', () => {
 // ---------- 初始化 ----------
 function renderAll(s) {
   renderForm(s.form);
+  loadCustomPreview();
   renderWater(s.water);
   renderSit(s.sit);
   renderDnd(s.dnd);
