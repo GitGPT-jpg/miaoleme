@@ -25,22 +25,32 @@
       "renderer/**/*",
       "assets/**/*"
     ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
     "mac": {
       "category": "public.app-category.productivity",
-      "icon": "assets/icon.png",
+      "icon": "build/icon.icns",
+      "identity": null,
       "target": [
         "dmg",
         "zip"
       ]
     },
     "win": {
-      "icon": "assets/icon.png",
+      "icon": "build/icon.png",
       "target": [
         "nsis"
       ]
     },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    },
     "linux": {
-      "icon": "assets/icon.png",
+      "icon": "build/icon.png",
       "target": [
         "AppImage"
       ]
