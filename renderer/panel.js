@@ -45,37 +45,81 @@ document.getElementById('upload-img').addEventListener('click', async () => {
   }
 });
 
-// 后台 3D 生成状态
+// 后台 3D 生成状态（可查询事实：初始化读主进程任务，事件只做通知）
 const genStatusEl = document.getElementById('gen-status');
 const genProgEl = document.getElementById('gen-progress');
 const genProgFill = document.getElementById('gen-progress-fill');
+const genActionsEl = document.getElementById('gen-actions');
+
+const GEN_STATE_MAP = { running: 'generating', completed: 'completed', partial: 'partial', failed: 'failed', cancelled: 'cancelled', unavailable: 'unavailable' };
+
 function setGenStatus(s) {
   genStatusEl.className = 'gen-status';
+  genActionsEl.style.display = 'none';
   if (!s) { genStatusEl.textContent = ''; genProgEl.classList.remove('show'); return; }
-  if (s.state === 'generating') {
+  const st = GEN_STATE_MAP[s.state || s.status] || s.state || s.status;
+  const total = s.total || 0;
+  const ok = s.succeeded || 0;
+  const bad = s.failed || 0;
+  const done = s.done != null ? s.done : ok + bad;
+
+  if (st === 'generating') {
     genStatusEl.classList.add('busy');
-    const total = s.total || 6;
-    const done = s.done || 0;
-    genStatusEl.textContent = `正在后台生成 3D 形象 ${done}/${total}${s.label ? '（' + s.label + '）' : ''}…`;
+    genStatusEl.textContent = total
+      ? `正在后台生成 3D 形象 ${done}/${total}${s.label ? '（' + s.label + '）' : ''}…`
+      : '正在准备生成…';
     genProgEl.classList.add('show');
-    genProgFill.style.width = Math.round(done / total * 100) + '%';
-  } else if (s.state === 'done') {
+    genProgFill.style.width = total ? Math.round(done / total * 100) + '%' : '4%';
+    genActionsEl.style.display = 'flex';
+  } else if (st === 'completed') {
     genStatusEl.classList.add('ok');
-    genStatusEl.textContent = '✅ 3D 形象（含动作）已全部生成并应用';
+    genStatusEl.textContent = `✅ 全部 ${total || ok} 个姿势生成完成并应用`;
     genProgFill.style.width = '100%';
     setTimeout(() => genProgEl.classList.remove('show'), 1500);
     loadCustomPreview();
-  } else if (s.state === 'failed') {
+  } else if (st === 'partial') {
     genStatusEl.classList.add('err');
-    genStatusEl.textContent = '⚠️ 生成失败，已使用原图';
+    genStatusEl.textContent = `⚠️ 已生成 ${ok}/${total}，${bad} 项失败，可重试失败项`;
+    genProgEl.classList.add('show');
+    genProgFill.style.width = Math.round(ok / (total || 1) * 100) + '%';
+    genActionsEl.style.display = 'flex';
+    loadCustomPreview();
+  } else if (st === 'cancelled') {
+    genStatusEl.classList.add('err');
+    genStatusEl.textContent = `⏹ 已取消生成（已完成 ${ok}/${total}）`;
     genProgEl.classList.remove('show');
-  } else if (s.state === 'unavailable') {
+    genActionsEl.style.display = 'flex';
+    loadCustomPreview();
+  } else if (st === 'failed') {
     genStatusEl.classList.add('err');
-    genStatusEl.textContent = '⚠️ 未配置生成服务，已使用原图';
+    genStatusEl.textContent = '❌ 生成失败，已保留原图/最近成功形象';
+    genProgEl.classList.remove('show');
+    genActionsEl.style.display = 'flex';
+  } else if (st === 'unavailable') {
+    genStatusEl.classList.add('err');
+    genStatusEl.textContent = '⚠️ 未配置生成服务，当前使用原图';
     genProgEl.classList.remove('show');
   }
 }
 window.api.onGenStatus((s) => setGenStatus(s));
+
+document.getElementById('gen-cancel').addEventListener('click', async () => {
+  await window.api.cancelGen();
+});
+document.getElementById('gen-retry').addEventListener('click', async () => {
+  const r = await window.api.retryGen();
+  if (r && r.ok && !r.nothingToDo) {
+    setGenStatus(Object.assign({ state: 'generating', succeeded: 0, failed: 0 }, r.job || {}));
+  }
+});
+
+// 初始化时查询真实任务状态（面板关闭重开也能看到）
+async function refreshGenJob() {
+  try {
+    const job = await window.api.getGenJob();
+    if (job) setGenStatus(job);
+  } catch (e) { /* 忽略 */ }
+}
 
 // ---------- 喝水 ----------
 const waterEnabled = document.getElementById('water-enabled');
@@ -478,6 +522,7 @@ async function init() {
   renderAll(s);
   buildWheel();
   buildMemory();
+  if (s.genJob) setGenStatus(s.genJob); else refreshGenJob();
 }
 window.api.onStateUpdated((s) => renderAll(s));
 init();

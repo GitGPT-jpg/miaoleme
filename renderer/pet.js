@@ -4,6 +4,8 @@ const photoA = document.getElementById('pet-photo');
 const photoB = document.getElementById('pet-photo-b');
 const bubble = document.getElementById('bubble');
 const menu = document.getElementById('menu');
+const stage = document.getElementById('stage');
+const feedBadge = document.getElementById('feed-badge');
 
 const FORMS = {
   cat:   { emoji: '🐱', name: '喵喵' },
@@ -12,18 +14,54 @@ const FORMS = {
   custom:{ emoji: '🐱', name: '宝贝' }
 };
 
-// 不同心情下的脸
 const MOOD_FACE = {
   cat:   { normal: '🐱', happy: '😸', alert: '🙀' },
   robot: { normal: '🤖', happy: '🤖', alert: '⚠️' },
   slime: { normal: '🟢', happy: '😄', alert: '🟠' }
 };
 
+const ACTIONS = {
+  roll:  { label: '打个滚~ 看我肚皮！', ms: 3600 },
+  groom: { label: '舔舔毛，保持美丽~', ms: 4000 },
+  eat:   { label: '干饭时间到！🍚', ms: 4500 },
+  sleep: { label: '有点困了…睡会儿 💤', ms: 7000 },
+  drink: { label: '咕噜咕噜~ 好喝！', ms: 3200 }
+};
+const ACT_CLASSES = ['act-roll', 'act-groom', 'act-eat', 'act-sleep', 'act-drink'];
+
+// ---------- 行为状态（单一所有权：drag > act > walk > idle） ----------
+// mode 是唯一的移动/动作控制权；session 用于让过期的异步回调失效
 let currentForm = 'custom';
+let mode = 'idle';
+let session = 0;
 let bubbleTimer = null;
+let wanderTimer = null;
+let actTimer = null;
+let sleepCycleTimer = null;
+let walkTimer = null;
+let rafId = null;
+
+function bumpSession() { session += 1; return session; }
+
+function clearBehaviorTimers() {
+  clearTimeout(wanderTimer); wanderTimer = null;
+  clearTimeout(actTimer); actTimer = null;
+  clearInterval(sleepCycleTimer); sleepCycleTimer = null;
+  clearInterval(walkTimer); walkTimer = null;
+  if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+}
+
+function setIdle() {
+  clearBehaviorTimers();
+  mode = 'idle';
+  pet.classList.remove('walking', 'acting', ...ACT_CLASSES);
+}
 
 function applyForm(form) {
   currentForm = form;
+  bumpSession();
+  clearBehaviorTimers();
+  mode = 'idle';
   pet.className = `form-${form} mood-normal`;
   if (form === 'custom') {
     loadCustomImage();
@@ -32,16 +70,18 @@ function applyForm(form) {
   }
 }
 
-// ---------- 帧集合与双层交叉淡化 ----------
-// F = { idle:[u,alt], walk:[u,alt], happy:u, actions:{...} }
+// ---------- 帧集合与双层交叉淡化（最新目标必胜） ----------
 let F = { idle: [], walk: [], happy: null, actions: {} };
-let visLayer = 'a';      // 当前可见层
+let visLayer = 'a';
 let activeUrl = null;
-let fadeBusy = false;
+let fading = false;
+let fadeTarget = null;
 
-function crossfadeTo(url, ms = 450) {
-  if (!url || url === activeUrl || fadeBusy) return;
-  fadeBusy = true;
+function runFade(ms = 450) {
+  const url = fadeTarget;
+  if (!url) { fading = false; return; }
+  if (url === activeUrl) { fading = false; return; }
+  fading = true;
   const target = visLayer === 'a' ? photoB : photoA;
   const other = visLayer === 'a' ? photoA : photoB;
   const apply = () => {
@@ -52,23 +92,32 @@ function crossfadeTo(url, ms = 450) {
     setTimeout(() => {
       visLayer = visLayer === 'a' ? 'b' : 'a';
       activeUrl = url;
-      fadeBusy = false;
+      fading = false;
       target.style.transition = '';
       other.style.transition = '';
-    }, ms + 30);
+      // 追赶期间到达的最新目标（不再丢弃）
+      if (fadeTarget && fadeTarget !== activeUrl) runFade(ms);
+    }, ms + 20);
   };
   if (target.src && target.src === url) {
-    apply();           // 已加载过（dataURL 直接比对）
+    apply();
   } else {
     target.onload = () => { target.onload = null; apply(); };
-    target.onerror = () => { target.onerror = null; fadeBusy = false; };
+    target.onerror = () => { target.onerror = null; fading = false; };
     target.src = url;
   }
 }
 
+function crossfadeTo(url, ms = 450) {
+  if (!url) return;
+  fadeTarget = url;
+  if (!fading) runFade(ms);
+}
+
 function loadCustomImage() {
+  const mySession = session;
   window.api.getCustomFrames().then((frames) => {
-    if (!frames) return;
+    if (!frames || mySession !== session) return; // 形态/图片已切换，丢弃过期结果
     F = {
       idle: [frames.idle, frames.idleAlt || frames.idle],
       walk: [frames.walk || frames.idle, frames.walkAlt || frames.walk || frames.idle],
@@ -81,16 +130,18 @@ function loadCustomImage() {
       photoB.style.opacity = '0';
       activeUrl = F.idle[0];
       visLayer = 'a';
-      fadeBusy = false;
+      fading = false;
+      fadeTarget = F.idle[0];
     }
+    setIdle();
+    scheduleWander();
   });
 }
 
-// 站立呼吸：在站立/坐姿之间缓缓交替
+// 站立呼吸：在站立/坐姿之间缓缓交替（仅 idle 时）
 let idleTick = 0;
 setInterval(() => {
-  if (currentForm !== 'custom' || F.idle.length < 2) return;
-  if (pet.classList.contains('walking') || pet.classList.contains('acting') || dragging) return;
+  if (currentForm !== 'custom' || mode !== 'idle' || F.idle.length < 2) return;
   idleTick = (idleTick + 1) % 2;
   crossfadeTo(F.idle[idleTick], 1200);
 }, 4200);
@@ -102,12 +153,9 @@ function setMood(mood) {
     face.textContent = (MOOD_FACE[currentForm] && MOOD_FACE[currentForm][mood]) || (FORMS[currentForm] && FORMS[currentForm].emoji) || '🐱';
     return;
   }
-  // 自定义形态：开心时切到抬头开心的帧（动作中不抢戏）
-  if (mood === 'happy' && F.happy && !pet.classList.contains('acting') && !pet.classList.contains('walking')) {
-    crossfadeTo(F.happy, 350);
-  } else if (mood === 'normal' && !pet.classList.contains('acting') && !pet.classList.contains('walking')) {
-    crossfadeTo(F.idle[0], 350);
-  }
+  if (mode !== 'idle') return;
+  if (mood === 'happy' && F.happy) crossfadeTo(F.happy, 350);
+  else if (mood === 'normal' && F.idle.length) crossfadeTo(F.idle[0], 350);
 }
 
 function say(text, mood = 'normal') {
@@ -121,7 +169,7 @@ function say(text, mood = 'normal') {
   }, 4000);
 }
 
-// 随机闲聊
+// 随机闲聊（不打断动作/拖拽）
 const IDLE_LINES = [
   '今天也要加油鸭~',
   '摸摸我会开心哦',
@@ -130,18 +178,19 @@ const IDLE_LINES = [
   '工作再忙也要休息一下~',
   '我一直在陪着你呢'
 ];
-function idleChat() {
+setInterval(() => {
+  if (mode !== 'idle' || dragging()) return;
   if (Math.random() < 0.5) say(IDLE_LINES[Math.floor(Math.random() * IDLE_LINES.length)], 'happy');
-}
-setInterval(idleChat, 60 * 1000);
+}, 60 * 1000);
 
 // ---------- 鼠标穿透 + 拖拽 ----------
-// 初始穿透，forward:true 让渲染层仍能收到 mousemove 以检测悬停
 window.api.setIgnoreMouse(true);
 let ignoring = true;
-let dragging = false;
-let dragStart = null;   // { mx, my, wx, wy }
-let moved = false;
+let drag = null;   // { ready, moved, mx, my, wx, wy }
+let cur = null;    // 最近的窗口坐标
+let home = null;   // 游走锚点
+
+function dragging() { return mode === 'drag'; }
 
 function overInteractive(x, y) {
   const el = document.elementFromPoint(x, y);
@@ -155,67 +204,75 @@ function setIgnore(v) {
   window.api.setIgnoreMouse(v);
 }
 
+function beginDrag(e) {
+  if (e.button !== 0 || drag) return;
+  e.preventDefault();
+  const mySession = session;
+  drag = { ready: false, moved: false, mx: e.screenX, my: e.screenY, wx: 0, wy: 0 };
+  mode = 'drag';
+  clearBehaviorTimers();
+  pet.classList.add('dragging');
+  window.api.getWinPos().then((p) => {
+    // 过期初始化：拖拽已结束或形态已切换 → 丢弃
+    if (!drag || session !== mySession) return;
+    drag.wx = p.x; drag.wy = p.y; drag.ready = true;
+    cur = { x: p.x, y: p.y };
+  });
+}
+
+function endDrag() {
+  if (!drag) return;
+  const d = drag;
+  drag = null;
+  pet.classList.remove('dragging');
+  mode = 'idle';
+  if (d.moved && d.ready) {
+    window.api.getWinPos().then((p) => {
+      cur = { x: p.x, y: p.y };
+      home = { x: p.x, y: p.y };
+      window.api.saveWinPos(p.x, p.y);
+      scheduleWander();
+    });
+  } else {
+    const lines = ['嘿嘿~', '在的在的！', '需要我做点什么吗？', '最喜欢你啦~', '戳我干嘛呀 >_<'];
+    say(lines[Math.floor(Math.random() * lines.length)], 'happy');
+    scheduleWander();
+  }
+}
+
+pet.addEventListener('mousedown', beginDrag);
 document.addEventListener('mousemove', (e) => {
-  if (dragging) {
-    moved = true;
-    const nx = dragStart.wx + (e.screenX - dragStart.mx);
-    const ny = dragStart.wy + (e.screenY - dragStart.my);
+  if (drag) {
+    if (!drag.ready) return; // 锚点尚未就绪，等 ready 后一次性追上位移
+    const nx = drag.wx + (e.screenX - drag.mx);
+    const ny = drag.wy + (e.screenY - drag.my);
+    if (Math.abs(nx - drag.wx) + Math.abs(ny - drag.wy) > 2) drag.moved = true;
+    cur = { x: nx, y: ny };
     window.api.setWinPos(nx, ny);
     return;
   }
-  // 悬停检测：在宠物/菜单/气泡上时允许交互，否则穿透
   setIgnore(!overInteractive(e.clientX, e.clientY));
 });
+window.addEventListener('mouseup', endDrag);
+window.addEventListener('blur', endDrag);
+document.addEventListener('visibilitychange', () => { if (document.hidden) endDrag(); });
 
-pet.addEventListener('mousedown', async (e) => {
-  if (e.button !== 0) return;
-  dragging = true;
-  moved = false;
-  pet.classList.add('dragging');
-  const pos = await window.api.getWinPos();
-  dragStart = { mx: e.screenX, my: e.screenY, wx: pos.x, wy: pos.y };
-  e.preventDefault();
-});
-
-window.addEventListener('mouseup', (e) => {
-  if (!dragging) return;
-  dragging = false;
-  pet.classList.remove('dragging');
-  if (moved) {
-    // 记忆位置
-    window.api.getWinPos().then((p) => window.api.saveWinPos(p.x, p.y));
-  } else {
-    // 没有拖动 = 点击互动
-    const lines = ['嘿嘿~', '在的在的！', '需要我做点什么吗？', '最喜欢你啦~', '戳我干嘛呀 >_<'];
-    say(lines[Math.floor(Math.random() * lines.length)], 'happy');
-  }
-});
-
-// ---------- 悬浮显示快捷菜单 ----------
+// ---------- 悬浮菜单 / 徽标 ----------
 pet.addEventListener('mouseenter', () => menu.classList.remove('hidden'));
-document.getElementById('stage').addEventListener('mouseleave', () => {
-  if (!dragging) menu.classList.add('hidden');
-});
+stage.addEventListener('mouseleave', () => { if (!dragging()) menu.classList.add('hidden'); });
 
-// 快捷菜单按钮
 menu.addEventListener('click', (e) => {
   const btn = e.target.closest('button');
   if (!btn) return;
   const act = btn.dataset.act;
-  if (act === 'water') {
-    window.api.feedWater();
-  } else if (act === 'food') {
-    window.api.feedFood();
-  } else if (act === 'game') {
+  if (act === 'water') window.api.feedWater();
+  else if (act === 'food') window.api.feedFood();
+  else if (act === 'game') {
     window.api.openPanel();
     window.api.petSay({ text: '去控制台找「小游戏」吧~', mood: 'happy' });
-  } else if (act === 'panel') {
-    window.api.openPanel();
-  }
+  } else if (act === 'panel') window.api.openPanel();
 });
 
-// ---------- 喂食请求徽标 ----------
-const feedBadge = document.getElementById('feed-badge');
 function renderFeedBadge(fs) {
   if (!fs) return;
   const waterBtn = feedBadge.querySelector('[data-feed="water"]');
@@ -231,76 +288,38 @@ feedBadge.addEventListener('click', (e) => {
   else if (btn.dataset.feed === 'food') window.api.feedFood();
 });
 
-// ---------- 来自主进程的事件 ----------
-window.api.onFormChanged((form) => applyForm(form));
-window.api.onPetSay((msg) => {
-  if (!msg) return;
-  if (typeof msg.action === 'string') playAction(msg.action);
-  if (msg.text) say(msg.text, msg.mood || 'normal');
-});
-window.api.onCustomImageChanged(() => loadCustomImage());
-window.api.onFeedState((fs) => renderFeedBadge(fs));
-
-// 初始化
-window.api.getState().then((s) => {
-  applyForm(s.form || 'custom');
-  renderFeedBadge(s.feed);
-});
-
-// ---------- 小范围跑动 + 动作（仅自定义形态） ----------
-let home = null;        // 游走的锚点（屏幕坐标）
-let cur = null;         // 当前窗口坐标（本地缓存）
-let wandering = false;
-let acting = false;     // 正在播放动作（打滚/舔毛/吃饭/睡觉）
-let wanderTimer = null;
-let actTimer = null;
-
-const ACTIONS = {
-  roll:  { label: '打个滚~ 看我肚皮！', ms: 3600 },
-  groom: { label: '舔舔毛，保持美丽~', ms: 4000 },
-  eat:   { label: '干饭时间到！🍚', ms: 4500 },
-  sleep: { label: '有点困了…睡会儿 💤', ms: 7000 },
-  drink: { label: '咕噜咕噜~ 好喝！', ms: 3200 }
-};
-
+// ---------- 动作 / 走路 / 游走 ----------
 async function ensurePos() {
   const p = await window.api.getWinPos();
   if (!home) home = { x: p.x, y: p.y };
   cur = { x: p.x, y: p.y };
 }
 
-// 走路：两帧交替 + 快速交叉淡化 = 迈步循环
-let walkTimer = null;
-let walkTick = 0;
 function setWalkFrame(on) {
   clearInterval(walkTimer);
+  walkTimer = null;
   if (on) {
     pet.classList.add('walking');
-    walkTick = 0;
+    let tick = 0;
     if (F.walk.length) crossfadeTo(F.walk[0], 160);
     walkTimer = setInterval(() => {
       if (F.walk.length < 2) return;
-      walkTick = (walkTick + 1) % 2;
-      crossfadeTo(F.walk[walkTick], 160);
+      tick = (tick + 1) % 2;
+      crossfadeTo(F.walk[tick], 160);
     }, 280);
   } else {
     pet.classList.remove('walking');
-    if (!acting && F.idle.length) crossfadeTo(F.idle[0], 350);
   }
 }
 
-// 播放一个动作：定格到对应姿势帧 + 冒泡文字 + 维持数秒后丝滑回到站立
-// 睡觉有两帧：交叉淡化模拟呼吸翻身
-let sleepCycleTimer = null;
 function playAction(name) {
   const act = ACTIONS[name];
   const url = F.actions && F.actions[name];
-  if (!act || !url || currentForm !== 'custom') return;
-  clearTimeout(actTimer);
-  clearInterval(sleepCycleTimer);
-  wandering = false;
-  acting = true;
-  pet.classList.remove('walking', 'face-left');
+  if (!act || !url || currentForm !== 'custom' || mode === 'drag') return;
+  const mySession = bumpSession();   // 任何新动作使旧的结束回调失效
+  clearBehaviorTimers();
+  mode = 'act';
+  pet.classList.remove('walking', 'face-left', ...ACT_CLASSES);
   pet.classList.add('acting', 'act-' + name);
   crossfadeTo(url, 400);
   if (name === 'sleep' && F.actions.sleep2) {
@@ -312,31 +331,28 @@ function playAction(name) {
   }
   say(act.label, name === 'sleep' ? 'normal' : 'happy');
   actTimer = setTimeout(() => {
-    clearInterval(sleepCycleTimer);
-    acting = false;
-    pet.classList.remove('acting', 'act-roll', 'act-groom', 'act-eat', 'act-sleep');
+    if (session !== mySession) return;   // 已被新动作/形态切换取代
+    setIdle();
     if (F.idle.length) crossfadeTo(F.idle[0], 450);
     scheduleWander();
   }, act.ms);
 }
-// 动作触发统一走上面的 onPetSay 通道（支持 action + text 组合）
 
 function scheduleWander() {
   clearTimeout(wanderTimer);
-  const delay = 3500 + Math.random() * 5000;
-  wanderTimer = setTimeout(startWander, delay);
+  wanderTimer = setTimeout(startWander, 3500 + Math.random() * 5000);
 }
 
 async function startWander() {
-  if (currentForm !== 'custom' || dragging || acting) { scheduleWander(); return; }
-  // 一定概率随机做个动作，否则小范围走动
+  if (currentForm !== 'custom' || mode !== 'idle') { scheduleWander(); return; }
   const names = Object.keys(F.actions || {}).filter((n) => n !== 'sleep2');
   if (names.length && Math.random() < 0.5) {
     playAction(names[Math.floor(Math.random() * names.length)]);
     return;
   }
+  const mySession = session;
   await ensurePos();
-  // 在锚点附近的小范围内选一个目标
+  if (session !== mySession || mode !== 'idle') return;  // 等待期间被拖拽/动作打断
   const target = {
     x: home.x + Math.round((Math.random() * 2 - 1) * 90),
     y: home.y + Math.round((Math.random() * 2 - 1) * 36)
@@ -344,37 +360,50 @@ async function startWander() {
   const dx = target.x - cur.x;
   if (Math.abs(dx) < 6 && Math.abs(target.y - cur.y) < 6) { scheduleWander(); return; }
   pet.classList.toggle('face-left', dx < 0);
-  wandering = true;
+  mode = 'walk';
   setWalkFrame(true);
   stepTo(target);
 }
 
 function stepTo(target) {
-  if (dragging || currentForm !== 'custom' || acting) { stopWander(); return; }
+  if (mode !== 'walk' || drag) { stopWander(); return; }
   const dx = target.x - cur.x;
   const dy = target.y - cur.y;
   const dist = Math.hypot(dx, dy);
   if (dist < 2) { stopWander(); return; }
   const speed = 1.6;
-  cur.x += dx / dist * Math.min(speed, dist);
-  cur.y += dy / dist * Math.min(speed, dist);
+  cur.x += (dx / dist) * Math.min(speed, dist);
+  cur.y += (dy / dist) * Math.min(speed, dist);
   window.api.setWinPos(cur.x, cur.y);
-  requestAnimationFrame(() => stepTo(target));
+  rafId = requestAnimationFrame(() => stepTo(target));
 }
 
 function stopWander() {
-  wandering = false;
-  setWalkFrame(false);
+  if (mode === 'walk') mode = 'idle';
+  clearInterval(walkTimer); walkTimer = null;
+  if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+  pet.classList.remove('walking');
+  if (currentForm === 'custom' && F.idle.length) crossfadeTo(F.idle[0], 350);
   scheduleWander();
 }
 
-// 拖拽结束后把锚点更新为新位置，并重新计划游走
-window.addEventListener('mouseup', () => {
-  setTimeout(async () => {
-    const p = await window.api.getWinPos();
-    home = { x: p.x, y: p.y };
-    cur = { x: p.x, y: p.y };
-  }, 60);
+// ---------- 来自主进程的事件 ----------
+window.api.onFormChanged((form) => applyForm(form));
+window.api.onPetSay((msg) => {
+  if (!msg) return;
+  if (typeof msg.action === 'string') playAction(msg.action);
+  if (msg.text) say(msg.text, msg.mood || 'normal');
 });
+window.api.onCustomImageChanged(() => {
+  bumpSession();
+  setIdle();
+  loadCustomImage();
+});
+window.api.onFeedState((fs) => renderFeedBadge(fs));
 
+// 初始化
+window.api.getState().then((s) => {
+  applyForm(s.form || 'custom');
+  renderFeedBadge(s.feed);
+});
 scheduleWander();

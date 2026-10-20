@@ -25,6 +25,8 @@ const STORE_FILE = path.join(app.getPath('userData'), 'zerobreak-store.json');
 
 const { normalizeState, readState } = require('./lib/store');
 const { mealSlotAt, mealEligible, inDndWindow, meetingNotice, ddlNotice, clearMarks, dateKey } = require('./lib/schedule');
+const { classifyGenError, validateImageBuffer, deriveJobStatus, extractImageBase64 } = require('./lib/gen');
+const { createGenJob } = require('./lib/genjob');
 
 function loadState() {
   const res = readState(STORE_FILE);
@@ -191,151 +193,236 @@ function mimeOf(p) {
   return 'image/jpeg';
 }
 
-// 从候选结果里抽 base64 图片（兼容多种响应结构）
-function extractImageBase64(resp) {
-  try {
-    const j = JSON.parse(resp);
-    const parts = (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [];
-    for (const p of parts) {
-      const d = (p.inlineData || p.inline_data || {}).data;
-      if (d) return d;
-    }
-    for (const it of (j.data || [])) {
-      if (it.b64_image) return it.b64_image;
-      if (it.url) return null; // 需要二次下载，暂不支持
-    }
-  } catch (e) { /* fallthrough */ }
-  return null;
-}
+const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// 调用图像生成服务，把 srcPath 按给定提示词转成一帧；成功返回输出文件绝对路径，失败返回 null
-function genAvatarFrame(srcPath, poseName, prompt) {
-  return new Promise(async (resolve) => {
-    const cfg = loadGenConfig();
-    if (!cfg) return resolve(null);
-    const outPath = path.join(app.getPath('userData'), `pet-gen-${poseName}-${Date.now()}.png`);
+// 调用图像生成服务，把 srcPath 按给定提示词转成一帧。
+// 返回 { ok:true, path } 或 { ok:false, error }；瞬时错误最多额外重试 2 次（退避）。
+async function genAvatarFrame(srcPath, poseName, prompt) {
+  const cfg = loadGenConfig();
+  if (!cfg) return { ok: false, error: 'unavailable' };
+
+  const attemptOnce = async () => {
+    let resp;
+    if (cfg.provider === 'comate' && cfg.comate && cfg.comate.apiUrl) {
+      const b64 = fs.readFileSync(srcPath).toString('base64');
+      resp = await httpsJson(cfg.comate.apiUrl, { 'login-name': cfg.comate.loginName || '' }, {
+        contents: [{ role: 'USER', parts: [
+          { inline_data: { mime_type: mimeOf(srcPath), data: b64 } },
+          { text: prompt }
+        ] }],
+        resolution: '2K',
+        aspectRatio: '1:1'
+      });
+    } else if (cfg.provider === 'qianfan' && cfg.qianfan && cfg.qianfan.apiUrl && cfg.qianfan.apiKey) {
+      const b64 = fs.readFileSync(srcPath).toString('base64');
+      const dataUri = `data:${mimeOf(srcPath)};base64,${b64}`;
+      resp = await httpsJson(cfg.qianfan.apiUrl, { 'Authorization': 'Bearer ' + cfg.qianfan.apiKey }, {
+        model: cfg.qianfan.model || 'ernie-image-turbo',
+        prompt: `${dataUri}\n${prompt}`,
+        n: 1,
+        size: cfg.qianfan.size || '1024x1024'
+      });
+    } else if (cfg.skillScript && fs.existsSync(cfg.skillScript)) {
+      return genViaScript(cfg, srcPath, poseName, prompt);
+    } else {
+      return { ok: false, error: 'unavailable' };
+    }
+    const parsed = extractImageBase64(resp);
+    if (parsed.error) return { ok: false, error: parsed.error };
+    const buf = Buffer.from(parsed.b64, 'base64');
+    const valid = validateImageBuffer(buf);
+    if (!valid.ok) return { ok: false, error: valid.error };
+    const outPath = path.join(app.getPath('userData'), `pet-gen-${poseName}-${Date.now()}${valid.ext}`);
+    fs.writeFileSync(outPath, buf);
+    return { ok: true, path: outPath };
+  };
+
+  let lastError = 'unknown';
+  for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      let base64 = null;
-      if (cfg.provider === 'comate' && cfg.comate && cfg.comate.apiUrl) {
-        // Comate Nano Banana Pro：Gemini 风格 contents + login-name 头
-        const b64 = fs.readFileSync(srcPath).toString('base64');
-        const payload = {
-          contents: [{ role: 'USER', parts: [
-            { inline_data: { mime_type: mimeOf(srcPath), data: b64 } },
-            { text: prompt }
-          ] }],
-          resolution: '2K',
-          aspectRatio: '1:1'
-        };
-        const resp = await httpsJson(cfg.comate.apiUrl, { 'login-name': cfg.comate.loginName || '' }, payload);
-        base64 = extractImageBase64(resp);
-      } else if (cfg.provider === 'qianfan' && cfg.qianfan && cfg.qianfan.apiUrl && cfg.qianfan.apiKey) {
-        // 百度千帆通用图像生成（OpenAI 兼容）：Bearer API Key
-        const b64 = fs.readFileSync(srcPath).toString('base64');
-        const dataUri = `data:${mimeOf(srcPath)};base64,${b64}`;
-        const payload = {
-          model: cfg.qianfan.model || 'ernie-image-turbo',
-          prompt: `${dataUri}\n${prompt}`,
-          n: 1,
-          size: cfg.qianfan.size || '1024x1024'
-        };
-        const resp = await httpsJson(cfg.qianfan.apiUrl, { 'Authorization': 'Bearer ' + cfg.qianfan.apiKey }, payload);
-        base64 = extractImageBase64(resp);
-      } else if (cfg.skillScript && fs.existsSync(cfg.skillScript)) {
-        // 旧版兼容：调用 skill 脚本
-        return resolve(await genViaScript(cfg, srcPath, poseName, prompt, outPath));
-      } else {
-        return resolve(null);
-      }
-      if (!base64) return resolve(null);
-      fs.writeFileSync(outPath, Buffer.from(base64, 'base64'));
-      return resolve(outPath);
+      return await attemptOnce();
     } catch (e) {
-      console.error('[gen] error', e && e.message);
-      return resolve(null);
+      lastError = classifyGenError(e);
+      if (!/transient|unknown/.test(lastError) || attempt === 2) {
+        return { ok: false, error: lastError };
+      }
+      await sleepMs(attempt === 0 ? 1000 : 3000);
     }
-  });
+  }
+  return { ok: false, error: lastError };
 }
 
-// 旧版 skill 脚本通道
-function genViaScript(cfg, srcPath, poseName, prompt, outPath) {
+// 旧版 skill 脚本通道：整体超时 + 有界输出缓存
+function genViaScript(cfg, srcPath, poseName, prompt) {
   return new Promise((resolve) => {
+    if (!cfg.skillScript || !/\.sh$/.test(cfg.skillScript)) return resolve({ ok: false, error: 'bad_request' });
     const out = `pet-gen-${poseName}-${Date.now()}.png`;
     const env = Object.assign({}, process.env, {
       COMATE_USERNAME_ENCRYPTED: cfg.comateUsernameEncrypted || process.env.COMATE_USERNAME_ENCRYPTED || ''
     });
     let stdout = '';
     let stderr = '';
+    let settled = false;
+    const finish = (res) => { if (!settled) { settled = true; clearTimeout(timer); resolve(res); } };
     const child = spawn('bash', [cfg.skillScript, '--prompt', prompt, '--input', srcPath, '--output', out, '--aspect-ratio', '1:1', '--resolution', '2K'],
       { cwd: app.getPath('userData'), env });
-    child.stdout.on('data', (d) => { stdout += d.toString(); });
-    child.stderr.on('data', (d) => { stderr += d.toString(); });
+    const timer = setTimeout(() => {
+      try { child.kill('SIGKILL'); } catch (e) { /* already gone */ }
+      finish({ ok: false, error: 'timeout' });
+    }, 5 * 60 * 1000);
+    child.stdout.on('data', (d) => { if (stdout.length < 100 * 1024) stdout += d.toString(); });
+    child.stderr.on('data', (d) => { if (stderr.length < 100 * 1024) stderr += d.toString(); });
     child.on('close', (code) => {
       const line = stdout.trim().split('\n').filter(Boolean).pop();
-      if (code === 0 && line && fs.existsSync(line)) resolve(line);
-      else { console.error('[gen] script failed', code, stderr.slice(-300)); resolve(null); }
+      if (code === 0 && line && fs.existsSync(line)) finish({ ok: true, path: line });
+      else finish({ ok: false, error: code === 0 ? 'bad_response' : 'transient' });
     });
-    child.on('error', (err) => { console.error('[gen] spawn error', err); resolve(null); });
+    child.on('error', () => finish({ ok: false, error: 'transient' }));
   });
 }
 
-let generating = false;
-function sendGenStatus(status) {
-  if (panelWin) panelWin.webContents.send('gen-status', status);
+// ---------- 生成任务：隔离、并发、重试、取消、可查询 ----------
+let genJob = null;
+let genSeq = 0;
+
+const GEN_REST = [
+  { key: 'walk',  prompt: GEN_WALK_PROMPT,          label: '行走' },
+  { key: 'roll',  prompt: GEN_ACTION_PROMPTS.roll,  label: '打滚' },
+  { key: 'groom', prompt: GEN_ACTION_PROMPTS.groom, label: '舔毛' },
+  { key: 'eat',   prompt: GEN_ACTION_PROMPTS.eat,   label: '吃饭' },
+  { key: 'sleep', prompt: GEN_ACTION_PROMPTS.sleep, label: '睡觉' }
+];
+
+function jobSnapshot(job) {
+  if (!job) return null;
+  return {
+    jobId: job.jobId, sourceId: job.sourceId, status: job.status,
+    total: job.total, succeeded: job.succeeded, failed: job.failed,
+    activePose: job.activePose, errorCode: job.errorCode,
+    startedAt: job.startedAt, updatedAt: job.updatedAt
+  };
 }
 
-// 上传后触发：先单独优先生成「站立」，其余 5 帧并行生成，带进度
-async function generate3DFromUpload(srcPath) {
+function sendGenStatus(job) {
+  const snap = jobSnapshot(job);
+  if (!snap) return;
+  const map = { running: 'generating', completed: 'completed', partial: 'partial', failed: 'failed', cancelled: 'cancelled', unavailable: 'unavailable' };
+  if (panelWin) panelWin.webContents.send('gen-status', Object.assign({ state: map[snap.status] || snap.status, done: snap.succeeded + snap.failed, label: snap.activePose }, snap));
+}
+
+function persistGenJob() {
+  state.genJob = jobSnapshot(genJob);
+  saveState();
+}
+
+function applyFrameToState(key, filePath) {
+  if (key === 'idle') state.customGenIdle = filePath;
+  else if (key === 'walk') state.customGenWalk = filePath;
+  else state.customGenActions = Object.assign({}, state.customGenActions || {}, { [key]: filePath });
+  saveState();
+  broadcastCustomImage();
+}
+
+let genRunner = null;
+
+function cancelGenJob() {
+  if (genRunner && genRunner.job.status === 'running') genRunner.cancel();
+}
+
+function makeEmptySnapshot(jobId, sourceId, status, total, errorCode) {
+  const now = Date.now();
+  return {
+    jobId, sourceId, status, total, succeeded: 0, failed: 0,
+    activePose: null, errorCode: errorCode || null, startedAt: now, updatedAt: now
+  };
+}
+
+// 启动生成任务。only 指定本次要补的姿势（重试失败项用）
+function startGenJob(sourcePath, sourceId, only) {
+  const want = (k) => !only || only.includes(k);
+  const has = (k) => {
+    if (k === 'idle') return !!(state.customGenIdle && fs.existsSync(state.customGenIdle));
+    if (k === 'walk') return !!(state.customGenWalk && fs.existsSync(state.customGenWalk));
+    return !!(state.customGenActions && state.customGenActions[k] && fs.existsSync(state.customGenActions[k]));
+  };
+  const tasks = [];
+  if (want('idle') && !has('idle')) tasks.push({ key: 'idle', prompt: GEN_IDLE_PROMPT, label: '站立', priority: true });
+  GEN_REST.forEach((t) => { if (want(t.key) && !has(t.key)) tasks.push(t); });
+
+  const jobId = `gen-${Date.now()}-${++genSeq}`;
+  const sid = sourceId || jobId;
+
   if (!genAvailable()) {
-    sendGenStatus({ state: 'unavailable' });
+    genJob = makeEmptySnapshot(jobId, sid, 'unavailable', tasks.length, 'unavailable');
+    persistGenJob();
+    sendGenStatus(genJob);
     petSay('（未配置生成服务，先用原图啦）', 'normal');
-    return;
+    return jobSnapshot(genJob);
   }
-  if (generating) return;
-  generating = true;
+  if (!tasks.length) {
+    genJob = makeEmptySnapshot(jobId, sid, 'completed', 0);
+    persistGenJob();
+    sendGenStatus(genJob);
+    return jobSnapshot(genJob);
+  }
 
-  const total = 6;
-  let done = 0;
-  let okCount = 0;
+  let runner;
+  runner = createGenJob({
+    jobId,
+    sourceId: sid,
+    tasks,
+    genFrame: (t) => genAvatarFrame(sourcePath, t.key, t.prompt),
+    applyFrame: (key, filePath) => {
+      if (genJob !== runner.job) return;   // 旧任务不得写状态
+      applyFrameToState(key, filePath);
+    },
+    onUpdate: (snap) => {
+      if (genJob !== runner.job) return;   // 过期任务不广播
+      state.genJob = snap;
+      saveState();
+      sendGenStatus(snap);
+    },
+    isCurrent: () => genJob === runner.job
+  });
 
-  const bump = (label) => { done++; sendGenStatus({ state: 'generating', done, total, label }); };
+  genRunner = runner;
+  genJob = runner.job;
+  persistGenJob();
+  sendGenStatus(runner.snapshot());
+  petSay(`正在把照片变成 3D 形象（${tasks.length} 个姿势），稍等~`, 'happy');
 
-  petSay('正在把你的照片变成 3D 立体形象，共 6 个姿势，稍等~', 'happy');
-  sendGenStatus({ state: 'generating', done: 0, total, label: '站立(优先)' });
+  runner.run().then((snap) => {
+    if (genJob !== runner.job) return;
+    if (snap.status === 'completed') petSay('全部姿势生成完成，喜欢吗~', 'happy');
+    else if (snap.status === 'partial') petSay(`生成了 ${snap.succeeded}/${snap.total} 个姿势，失败的可以重试~`, 'normal');
+    else if (snap.status === 'cancelled') petSay('生成已取消，继续用现在的形象~', 'normal');
+    else petSay('3D 生成没成功，先用原图啦', 'normal');
+    cleanupOldGenFiles();
+  });
 
+  return runner.snapshot();
+}
+
+// 只清理应用自己产生且当前未引用的生成文件；不删除用户原始照片
+function cleanupOldGenFiles() {
   try {
-    // 1) 站立帧优先，单独先出，立即应用
-    const idle = await genAvatarFrame(srcPath, 'idle', GEN_IDLE_PROMPT);
-    if (idle) { state.customGenIdle = idle; okCount++; saveState(); broadcastCustomImage(); }
-    bump('站立');
-
-    // 2) 其余 5 帧并行生成，谁先好谁先应用
-    const rest = [
-      { key: 'walk',  prompt: GEN_WALK_PROMPT,          label: '行走' },
-      { key: 'roll',  prompt: GEN_ACTION_PROMPTS.roll,  label: '打滚' },
-      { key: 'groom', prompt: GEN_ACTION_PROMPTS.groom, label: '舔毛' },
-      { key: 'eat',   prompt: GEN_ACTION_PROMPTS.eat,   label: '吃饭' },
-      { key: 'sleep', prompt: GEN_ACTION_PROMPTS.sleep, label: '睡觉' }
-    ];
-    await Promise.all(rest.map(async (s) => {
-      const out = await genAvatarFrame(srcPath, s.key, s.prompt);
-      if (out) {
-        okCount++;
-        if (s.key === 'walk') state.customGenWalk = out;
-        else state.customGenActions = Object.assign({}, state.customGenActions || {}, { [s.key]: out });
-        saveState();
-        broadcastCustomImage();   // 每出一帧即时应用
-      }
-      bump(s.label);
-    }));
-
-    if (okCount > 0) { sendGenStatus({ state: 'done', done: total, total }); petSay('全部姿势生成完成，喜欢吗~', 'happy'); }
-    else { sendGenStatus({ state: 'failed' }); petSay('3D 生成没成功，先用原图啦', 'normal'); }
-  } catch (e) {
-    sendGenStatus({ state: 'failed' });
-  } finally {
-    generating = false;
-  }
+    const keep = new Set(
+      [state.customImage, state.customGenIdle, state.customGenWalk]
+        .concat(Object.values(state.customGenActions || {}))
+        .filter(Boolean)
+    );
+    const dir = app.getPath('userData');
+    const files = fs.readdirSync(dir);
+    const keepSourcePrefix = path.basename(state.customImage || '');
+    for (const f of files) {
+      const isOwnFrame = /^pet-gen-.*\.(png|jpg)$/.test(f);
+      const isOldSource = /^pet-custom-.*\.(png|jpg|jpeg|gif|webp)$/.test(f) && f !== keepSourcePrefix;
+      if (!isOwnFrame && !isOldSource) continue;
+      const full = path.join(dir, f);
+      if (keep.has(full)) continue;
+      try { fs.unlinkSync(full); } catch (e) { /* ignore */ }
+    }
+  } catch (e) { /* ignore */ }
 }
 
 function broadcastCustomImage() {
@@ -678,7 +765,8 @@ function publicState() {
     autoLaunch: state.autoLaunch,
     stats: state.stats,
     meetings: state.meetings,
-    ddls: state.ddls
+    ddls: state.ddls,
+    genJob: jobSnapshot(genJob) || state.genJob
   };
 }
 
@@ -756,10 +844,13 @@ ipcMain.handle('upload-custom-image', async () => {
   try {
     const src = res.filePaths[0];
     const ext = path.extname(src).toLowerCase() || '.png';
-    const dest = path.join(app.getPath('userData'), 'pet-custom' + ext);
+    const jobId = `upload-${Date.now()}-${++genSeq}`;
+    // 每次上传独立输入快照，避免被下一次上传覆盖
+    const dest = path.join(app.getPath('userData'), `pet-custom-${jobId}${ext}`);
     fs.copyFileSync(src, dest);
+    cancelGenJob();                 // 旧任务立即失效，不再回写
     state.customImage = dest;
-    state.customGenIdle = null;   // 清除上一次生成的 3D 帧，待重新生成
+    state.customGenIdle = null;     // 清除上一次生成的 3D 帧，待重新生成
     state.customGenWalk = null;
     state.customGenActions = null;
     state.form = 'custom';
@@ -769,11 +860,29 @@ ipcMain.handle('upload-custom-image', async () => {
     if (petWin) { petWin.webContents.send('form-changed', 'custom'); petWin.webContents.send('custom-image-changed', url); }
     if (panelWin) panelWin.webContents.send('state-updated', publicState());
     // 后台异步生成 3D 形象（不阻塞上传返回；先用原图占位，生成完自动替换）
-    generate3DFromUpload(dest);
-    return { ok: true, dataUrl: url, generating: genAvailable() };
+    startGenJob(dest, jobId, null);
+    return { ok: true, dataUrl: url, generating: genAvailable(), jobId };
   } catch (err) {
     return { ok: false, error: String(err) };
   }
+});
+
+// 生成任务查询 / 取消 / 重试失败项
+ipcMain.handle('get-gen-job', () => jobSnapshot(genJob) || state.genJob);
+ipcMain.handle('cancel-gen', () => { cancelGenJob(); return jobSnapshot(genJob); });
+ipcMain.handle('retry-gen', () => {
+  const src = state.customImage;
+  if (!src || !fs.existsSync(src)) return { ok: false, error: 'no_source' };
+  const only = [];
+  if (!(state.customGenIdle && fs.existsSync(state.customGenIdle))) only.push('idle');
+  if (!(state.customGenWalk && fs.existsSync(state.customGenWalk))) only.push('walk');
+  GEN_REST.forEach((t) => {
+    const p = state.customGenActions && state.customGenActions[t.key];
+    if (!(p && fs.existsSync(p))) only.push(t.key);
+  });
+  if (!only.length) return { ok: true, nothingToDo: true };
+  const job = startGenJob(src, `retry-${Date.now()}`, only);
+  return { ok: true, job: jobSnapshot(job) };
 });
 
 ipcMain.handle('set-water', (e, cfg) => {
@@ -936,13 +1045,14 @@ ipcMain.on('trigger-action', (e, name) => {
 ipcMain.on('open-panel', openPanel);
 
 // ---------- 生命周期 ----------
+let reminderTimer = null;
 app.whenReady().then(() => {
   createPetWindow();
   createPanelWindow();
   buildTray();
   openPanel(); // 首次启动直接展示功能面板，避免用户找不到入口
   checkReminders();
-  setInterval(checkReminders, 20 * 1000); // 每 20 秒检查一次
+  reminderTimer = setInterval(checkReminders, 20 * 1000); // 每 20 秒检查一次
 
   // 同步开机自启设置
   try {
@@ -958,7 +1068,11 @@ app.whenReady().then(() => {
   } catch (err) { /* ignore */ }
 });
 
-app.on('will-quit', () => globalShortcut.unregisterAll());
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+  if (reminderTimer) clearInterval(reminderTimer);
+  stopPomodoro(true);
+});
 
 app.on('window-all-closed', (e) => {
   // 保持常驻，不随窗口关闭退出
