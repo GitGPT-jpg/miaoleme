@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>零度突破 · 桌面桌宠小助手</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(160deg, #f6f8ff 0%, #eef1fb 45%, #fdf3ef 100%);
+    color: #2c3140;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 0 20px; }
+  header { text-align: center; padding: 64px 20px 40px; }
+  header img.logo { width: 96px; height: 96px; border-radius: 24px; box-shadow: 0 10px 30px rgba(106,141,255,.35); }
+  h1 { font-size: 34px; margin-top: 18px; }
+  h1 .grad { background: linear-gradient(90deg, #6a8dff, #8f6aff, #ff8a5c); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .tagline { color: #7a8093; margin-top: 10px; font-size: 16px; }
+  .hero-cat { margin: 26px auto 0; width: 220px; display: block; filter: drop-shadow(0 18px 24px rgba(40,50,90,.25)); animation: float 3.6s ease-in-out infinite; }
+  @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+  .badges { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 22px; }
+  .badge { background: #fff; border-radius: 20px; padding: 6px 14px; font-size: 13px; color: #5a6280; box-shadow: 0 2px 8px rgba(40,50,90,.08); }
+  section { margin: 48px 0; }
+  h2 { font-size: 22px; text-align: center; margin-bottom: 26px; }
+  h2 .dot { color: #ff8a5c; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
+  .card { background: #fff; border-radius: 16px; padding: 20px 16px; box-shadow: 0 4px 16px rgba(40,50,90,.06); transition: transform .2s; }
+  .card:hover { transform: translateY(-4px); }
+  .card .icon { font-size: 30px; }
+  .card h3 { font-size: 15px; margin: 10px 0 6px; }
+  .card p { font-size: 13px; color: #7a8093; }
+  .frames { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .frame { width: 110px; text-align: center; }
+  .frame img { width: 100%; border-radius: 14px; background: rgba(255,255,255,.7); box-shadow: 0 6px 14px rgba(40,50,90,.12); }
+  .frame span { display: block; font-size: 12px; color: #7a8093; margin-top: 6px; }
+  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+  .step { background: #fff; border-radius: 16px; padding: 20px; text-align: center; box-shadow: 0 4px 16px rgba(40,50,90,.06); }
+  .step b { display: inline-flex; width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(135deg, #6a8dff, #8f6aff); color: #fff; align-items: center; justify-content: center; font-size: 15px; margin-bottom: 10px; }
+  .step p { font-size: 13px; color: #5a6280; }
+  .cta { text-align: center; background: #fff; border-radius: 20px; padding: 34px 20px; box-shadow: 0 6px 24px rgba(40,50,90,.08); }
+  .cta a.btn { display: inline-block; background: linear-gradient(135deg, #6a8dff, #8f6aff); color: #fff; text-decoration: none; padding: 12px 30px; border-radius: 26px; font-weight: 600; box-shadow: 0 8px 20px rgba(106,141,255,.4); transition: transform .2s; }
+  .cta a.btn:hover { transform: translateY(-2px); }
+  .cta p.note { font-size: 12px; color: #9aa0b0; margin-top: 14px; }
+  footer { text-align: center; padding: 30px 0 46px; color: #9aa0b0; font-size: 12px; }
+</style>
+</head>
+<body>
+  <header>
+    <img class="logo" src="assets/icon.png" alt="零度突破图标" />
+    <h1><span class="grad">零度突破</span> · 桌面桌宠小助手</h1>
+    <p class="tagline">一只住在桌面上的 3D 猫咪：提醒你喝水开会赶 DDL，陪你玩游戏、帮你决定吃什么——上传照片，还能把它变成你自己的专属桌宠。</p>
+    <img class="hero-cat" src="assets/cat-3d-idle.png" alt="3D 猫咪" />
+    <div class="badges">
+      <span class="badge">🐱 三种内置形态 + 自定义</span>
+      <span class="badge">📷 照片一键变 3D 桌宠</span>
+      <span class="badge">💧 喂水喂粮养成</span>
+      <span class="badge">⏰ 喝水/会议/DDL 提醒</span>
+      <span class="badge">🎮 4 款小游戏</span>
+      <span class="badge">🍱 吃饭转盘</span>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <section>
+      <h2>它会自己<span class="dot">动</span>起来</h2>
+      <div class="frames">
+        <div class="frame"><img src="assets/cat-3d-walk.png" alt="走路"><span>🚶 溜达（两帧迈步循环）</span></div>
+        <div class="frame"><img src="assets/cat-3d-roll.png" alt="打滚"><span>🙃 打滚露肚皮</span></div>
+        <div class="frame"><img src="assets/cat-3d-groom.png" alt="舔毛"><span>👅 舔毛</span></div>
+        <div class="frame"><img src="assets/cat-3d-eat.png" alt="吃饭"><span>🍚 吃猫粮</span></div>
+        <div class="frame"><img src="assets/cat-3d-sleep.png" alt="睡觉"><span>😴 睡觉（翻身呼吸）</span></div>
+        <div class="frame"><img src="assets/cat-3d-drink.png" alt="喝水"><span>💧 喝水</span></div>
+        <div class="frame"><img src="assets/cat-3d-sit.png" alt="坐姿"><span>🪑 站坐交替呼吸</span></div>
+        <div class="frame"><img src="assets/cat-3d-happy.png" alt="开心"><span>😄 开心抬头</span></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>核心功能</h2>
+      <div class="cards">
+        <div class="card"><div class="icon">💧</div><h3>喂水提醒</h3><p>到点猫咪撒娇讨水，喂了它才开心；没喂会过几分钟再催</p></div>
+        <div class="card"><div class="icon">🍚</div><h3>饭点讨粮</h3><p>中午/晚上饭点提醒，喂猫粮播干饭动画，亲密度+2</p></div>
+        <div class="card"><div class="icon">📅</div><h3>会议提醒</h3><p>提前 5 分钟 + 到点两次提醒，永远不迟到</p></div>
+        <div class="card"><div class="icon">⏰</div><h3>DDL 提醒</h3><p>提前 1 天 / 1 小时 / 到点三档，守住工作截止线</p></div>
+        <div class="card"><div class="icon">🍅</div><h3>番茄钟</h3><p>专注/休息自动循环，完成计入成就和等级</p></div>
+        <div class="card"><div class="icon">🍱</div><h3>吃饭转盘</h3><p>午餐/晚餐随机选，支持自定义菜单，治好选择困难</p></div>
+        <div class="card"><div class="icon">🎮</div><h3>小游戏</h3><p>石头剪刀布、猜数字、记忆翻牌、反应力测试</p></div>
+        <div class="card"><div class="icon">🌟</div><h3>养成系统</h3><p>亲密度/喝水/番茄成就 + 等级进度条</p></div>
+        <div class="card"><div class="icon">🌙</div><h3>免打扰 & 暗色</h3><p>免打扰时段静默通知，暗色模式护眼</p></div>
+        <div class="card"><div class="icon">📷</div><h3>照片变桌宠</h3><p>上传任意照片，后台自动生成 3D 立体形象全套动作</p></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>照片怎么变成<span class="dot">3D 桌宠</span></h2>
+      <div class="steps">
+        <div class="step"><b>1</b><p>控制台点「上传我的图片」</p></div>
+        <div class="step"><b>2</b><p>后台自动生成 3D 立体形象（先出站立，其余并行）</p></div>
+        <div class="step"><b>3</b><p>行走、打滚、舔毛、吃饭、睡觉、喝水全套动作自动配齐</p></div>
+        <div class="step"><b>4</b><p>桌宠换上新形象，开始它的桌宠生活</p></div>
+      </div>
+    </section>
+
+    <section>
+      <div class="cta">
+        <a class="btn" href="https://github.com/GitGPT-jpg/mac-desktop-pet" target="_blank">🏠 项目主页（GitHub）</a>
+        <p class="note">Mac 安装包（dmg）与 Windows 免安装包请到项目主页获取；本地开发：npm install && npm start</p>
+      </div>
+    </section>
+  </div>
+
+  <footer>零度突破 · 桌面桌宠小助手 · 让提醒变成养猫的快乐</footer>
+</body>
+</html>
