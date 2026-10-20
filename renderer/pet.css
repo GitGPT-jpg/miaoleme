@@ -28,9 +28,9 @@ html, body {
   flex-direction: column;
   align-items: center;
   justify-content: flex-end;
-  -webkit-app-region: drag;      /* 拖动移动窗口 */
   cursor: grab;
 }
+#pet.dragging { cursor: grabbing; }
 
 .pet-face {
   font-size: 92px;

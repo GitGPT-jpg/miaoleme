@@ -56,10 +56,13 @@ function idleChat() {
 }
 setInterval(idleChat, 60 * 1000);
 
-// ---------- 鼠标穿透控制 ----------
+// ---------- 鼠标穿透 + 拖拽 ----------
 // 初始穿透，forward:true 让渲染层仍能收到 mousemove 以检测悬停
 window.api.setIgnoreMouse(true);
 let ignoring = true;
+let dragging = false;
+let dragStart = null;   // { mx, my, wx, wy }
+let moved = false;
 
 function overInteractive(x, y) {
   const el = document.elementFromPoint(x, y);
@@ -67,30 +70,52 @@ function overInteractive(x, y) {
   return el.closest('#pet') || el.closest('#menu') || el.closest('#bubble');
 }
 
+function setIgnore(v) {
+  if (v === ignoring) return;
+  ignoring = v;
+  window.api.setIgnoreMouse(v);
+}
+
 document.addEventListener('mousemove', (e) => {
-  const over = overInteractive(e.clientX, e.clientY);
-  if (over && ignoring) {
-    ignoring = false;
-    window.api.setIgnoreMouse(false);
-  } else if (!over && !ignoring) {
-    ignoring = true;
-    window.api.setIgnoreMouse(true);
+  if (dragging) {
+    moved = true;
+    const nx = dragStart.wx + (e.screenX - dragStart.mx);
+    const ny = dragStart.wy + (e.screenY - dragStart.my);
+    window.api.setWinPos(nx, ny);
+    return;
+  }
+  // 悬停检测：在宠物/菜单/气泡上时允许交互，否则穿透
+  setIgnore(!overInteractive(e.clientX, e.clientY));
+});
+
+pet.addEventListener('mousedown', async (e) => {
+  if (e.button !== 0) return;
+  dragging = true;
+  moved = false;
+  pet.classList.add('dragging');
+  const pos = await window.api.getWinPos();
+  dragStart = { mx: e.screenX, my: e.screenY, wx: pos.x, wy: pos.y };
+  e.preventDefault();
+});
+
+window.addEventListener('mouseup', (e) => {
+  if (!dragging) return;
+  dragging = false;
+  pet.classList.remove('dragging');
+  if (moved) {
+    // 记忆位置
+    window.api.getWinPos().then((p) => window.api.saveWinPos(p.x, p.y));
+  } else {
+    // 没有拖动 = 点击互动
+    const lines = ['嘿嘿~', '在的在的！', '需要我做点什么吗？', '最喜欢你啦~', '戳我干嘛呀 >_<'];
+    say(lines[Math.floor(Math.random() * lines.length)], 'happy');
   }
 });
 
 // ---------- 悬浮显示快捷菜单 ----------
 pet.addEventListener('mouseenter', () => menu.classList.remove('hidden'));
-document.getElementById('stage').addEventListener('mouseleave', () => menu.classList.add('hidden'));
-
-// 点击宠物：互动
-let lastClickTs = 0;
-pet.addEventListener('click', () => {
-  // 拖动结束也会触发 click，这里用简单节流
-  const now = Date.now();
-  if (now - lastClickTs < 300) return;
-  lastClickTs = now;
-  const lines = ['嘿嘿~', '在的在的！', '需要我做点什么吗？', '最喜欢你啦~'];
-  say(lines[Math.floor(Math.random() * lines.length)], 'happy');
+document.getElementById('stage').addEventListener('mouseleave', () => {
+  if (!dragging) menu.classList.add('hidden');
 });
 
 // 快捷菜单按钮
