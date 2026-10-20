@@ -33,7 +33,7 @@
 | 会议漏窗补偿 | 10 分钟内补发"已开始 N 分钟"，超过只补标记；文案用真实剩余分钟 | `test/schedule.test.js` PASS |
 | DDL 漏窗补偿 | 只补发最紧迫阶段，并合并更早阶段标记；过期超 1 天不打扰 | `test/schedule.test.js` PASS |
 | 删除清理标记 | 删除会议/DDL 同步清理 `notified*` | 代码复核 |
-| 番茄钟 | 保留 endTs；重复 start 重置单一计时器；休眠恢复不虚增（每次工作阶段只+1）；退出清理计时器 | 代码复核；单测未覆盖（NOT_RUN） |
+| 番茄钟 | 保留 endTs；重复 start 重置单一计时器；运行态持久化并在重启时按策略恢复；退出清理计时器与生成子进程 | `test/pomodoro.test.js` PASS + 两次真实重启集成验证 PASS（见下方证据） |
 
 ### P0 — 图片上传与生成
 | 项 | 变更 | 证据 |
@@ -64,6 +64,10 @@
 | 生成错误分类、图片校验、并发池、状态推导 | `test/gen.test.js` | PASS |
 | 生成任务隔离/取消/截止/部分成功 | `test/genjob.test.js` | PASS |
 | 坐标 clamp / 多屏判定 | `test/geometry.test.js` | PASS |
+| 番茄钟恢复（未到期续跑、只计一次） | 预置 endTs=now+15s 写入 store → 重启 → 读取 store | PASS（pomodoroDone 0→1，phase 自动转 break 并持久化） |
+| 番茄钟过期不虚增 | 预置 endTs=now-60s → 重启 → 读取 store | PASS（pomo=null，pomodoroDone 保持 1） |
+| 关闭喝水提醒清理待喂请求 | 代码路径复核（set-water 关闭时清 waterRequest 并广播） | PASS（代码级） |
+| 退出时杀生成子进程 | 代码路径复核（genChildren 集合 + will-quit SIGKILL） | PASS（代码级） |
 | 开发版启动 | `npm start`，进程存活，日志仅登录项权限报错（沙箱限制） | PASS |
 | 打包产物含新增模块 | `electron-builder --dir` + `asar list`（lib/* 均在包内） | PASS |
 | 打包产物启动 | 直接执行包内二进制，进程存活 | PASS |

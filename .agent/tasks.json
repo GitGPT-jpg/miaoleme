@@ -345,10 +345,11 @@
         "跨休眠恢复不自动记完成"
       ],
       "verification": {
-        "status": "NOT_RUN",
+        "status": "PASS",
         "evidence": [
-          "npm test",
-          "docs/verification.md"
+          "test/pomodoro.test.js",
+          "重启集成：0->1 完成一次并转 break",
+          "重启集成：过期不计数"
         ]
       },
       "attempts": 0,
