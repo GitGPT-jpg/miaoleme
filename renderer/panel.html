@@ -7,20 +7,31 @@
   <title>零度突破 · 控制台</title>
   <link rel="stylesheet" href="panel.css" />
 </head>
-<body>
+<body data-theme="light">
   <header>
-    <h1>零度突破 <span>桌宠小助手</span></h1>
+    <div class="htop">
+      <h1>零度突破 <span>桌宠小助手</span></h1>
+      <button id="theme-toggle" class="icon-btn" title="切换深浅色">🌙</button>
+    </div>
+    <div class="stats-strip">
+      <div class="stat"><b id="st-intimacy">0</b><em>亲密度</em></div>
+      <div class="stat"><b id="st-water">0</b><em>喝水</em></div>
+      <div class="stat"><b id="st-pomo">0</b><em>番茄</em></div>
+      <div class="stat"><b id="st-level">Lv.1</b><em>等级</em></div>
+    </div>
   </header>
 
   <nav id="tabs">
     <button class="tab active" data-tab="pet">桌宠</button>
     <button class="tab" data-tab="remind">提醒</button>
-    <button class="tab" data-tab="meal">吃饭转盘</button>
-    <button class="tab" data-tab="game">小游戏</button>
+    <button class="tab" data-tab="focus">专注</button>
+    <button class="tab" data-tab="meal">吃饭</button>
+    <button class="tab" data-tab="game">游戏</button>
+    <button class="tab" data-tab="setting">设置</button>
   </nav>
 
   <main>
-    <!-- 桌宠形态 -->
+    <!-- 桌宠 -->
     <section class="page active" id="page-pet">
       <div class="card">
         <h2>选择形态</h2>
@@ -29,7 +40,13 @@
           <button class="form-btn" data-form="robot"><span>🤖</span>小铁</button>
           <button class="form-btn" data-form="slime"><span>🟢</span>咕叽</button>
         </div>
-        <p class="hint">提示：桌宠会浮在屏幕右下角，可直接拖动它移动位置。鼠标悬停可呼出快捷菜单。</p>
+        <p class="hint">桌宠浮在屏幕上，直接拖动它移动位置；鼠标悬停呼出快捷菜单，点击它会互动并增加亲密度。</p>
+      </div>
+      <div class="card center">
+        <h2>养成</h2>
+        <div class="level-bar"><div id="level-fill"></div></div>
+        <p class="hint" id="level-text">多陪伴桌宠、按时喝水、完成番茄钟都会提升等级~</p>
+        <button id="pet-praise">摸摸它 ❤️</button>
       </div>
     </section>
 
@@ -37,17 +54,16 @@
     <section class="page" id="page-remind">
       <div class="card">
         <h2>💧 喝水提醒</h2>
-        <label class="row">
-          <input type="checkbox" id="water-enabled" />
-          <span>开启喝水提醒</span>
-        </label>
-        <label class="row">
-          <span>间隔</span>
-          <input type="number" id="water-interval" min="5" max="240" step="5" /> 分钟
-          <button id="water-save" class="mini">保存</button>
-        </label>
+        <label class="row"><input type="checkbox" id="water-enabled" /><span>开启</span></label>
+        <label class="row"><span>间隔</span><input type="number" id="water-interval" min="5" max="240" step="5" /> 分钟
+          <button id="water-save" class="mini">保存</button></label>
       </div>
-
+      <div class="card">
+        <h2>🧍 久坐提醒</h2>
+        <label class="row"><input type="checkbox" id="sit-enabled" /><span>开启</span></label>
+        <label class="row"><span>间隔</span><input type="number" id="sit-interval" min="10" max="240" step="10" /> 分钟
+          <button id="sit-save" class="mini">保存</button></label>
+      </div>
       <div class="card">
         <h2>📅 会议提醒</h2>
         <div class="add-row">
@@ -57,7 +73,6 @@
         </div>
         <ul class="list" id="meet-list"></ul>
       </div>
-
       <div class="card">
         <h2>⏰ 工作 DDL</h2>
         <div class="add-row">
@@ -66,6 +81,26 @@
           <button id="ddl-add">添加</button>
         </div>
         <ul class="list" id="ddl-list"></ul>
+      </div>
+    </section>
+    <!-- PLACEHOLDER_PAGES -->
+    <!-- 专注 · 番茄钟 -->
+    <section class="page" id="page-focus">
+      <div class="card center">
+        <h2>🍅 番茄钟</h2>
+        <div class="pomo-ring">
+          <div id="pomo-time">25:00</div>
+          <div id="pomo-phase" class="hint">准备开始</div>
+        </div>
+        <div class="add-row center-row">
+          <label>专注 <input type="number" id="pomo-work" min="1" max="120" /> 分</label>
+          <label>休息 <input type="number" id="pomo-break" min="1" max="60" /> 分</label>
+          <button id="pomo-cfg-save" class="mini">保存</button>
+        </div>
+        <div class="meal-ctrl">
+          <button id="pomo-start">开始专注</button>
+          <button id="pomo-stop" class="mini">停止</button>
+        </div>
       </div>
     </section>
 
@@ -93,7 +128,7 @@
       </div>
     </section>
 
-    <!-- 小游戏 -->
+    <!-- 游戏 -->
     <section class="page" id="page-game">
       <div class="card center">
         <h2>✊ 石头剪刀布</h2>
@@ -105,19 +140,50 @@
         <p id="rps-result" class="result"></p>
         <p class="score">战绩：<span id="rps-score">0 胜 0 负 0 平</span></p>
       </div>
-
       <div class="card center">
         <h2>🔢 猜数字 (1-100)</h2>
-        <div class="add-row">
+        <div class="add-row center-row">
           <input type="number" id="guess-input" min="1" max="100" placeholder="输入猜测" />
           <button id="guess-btn">猜</button>
           <button id="guess-reset" class="mini">重开</button>
         </div>
         <p id="guess-result" class="result">我想好了一个 1-100 的数字，来猜吧！</p>
       </div>
+      <div class="card center">
+        <h2>🧠 记忆翻牌</h2>
+        <div id="memory-grid" class="memory-grid"></div>
+        <div class="meal-ctrl">
+          <button id="memory-reset" class="mini">重新开始</button>
+        </div>
+        <p id="memory-result" class="result">翻开配对所有卡片~</p>
+      </div>
+      <div class="card center">
+        <h2>⚡ 反应力测试</h2>
+        <div id="reaction-box" class="reaction-box">点击开始</div>
+        <p id="reaction-result" class="result">等变绿后立刻点击，测测你的手速！</p>
+      </div>
+    </section>
+
+    <!-- 设置 -->
+    <section class="page" id="page-setting">
+      <div class="card">
+        <h2>🌙 免打扰时段</h2>
+        <label class="row"><input type="checkbox" id="dnd-enabled" /><span>开启（时段内不弹系统通知）</span></label>
+        <label class="row"><span>从</span><input type="time" id="dnd-start" /><span>到</span><input type="time" id="dnd-end" />
+          <button id="dnd-save" class="mini">保存</button></label>
+      </div>
+      <div class="card">
+        <h2>⚙️ 通用</h2>
+        <label class="row"><input type="checkbox" id="autolaunch" /><span>开机自动启动</span></label>
+        <label class="row"><input type="checkbox" id="theme-dark" /><span>深色模式</span></label>
+        <p class="hint">全局快捷键 ⌘/Ctrl + ⇧ + P 可随时呼出/隐藏本控制台。关闭窗口不会退出，程序常驻在菜单栏托盘。</p>
+      </div>
+      <div class="card">
+        <h2>ℹ️ 关于</h2>
+        <p class="hint">零度突破 · 桌面桌宠小助手 v0.2。喝水/久坐/会议/DDL 提醒、番茄钟、吃饭转盘、小游戏、养成，全部本地运行、数据本地存储。</p>
+      </div>
     </section>
   </main>
-
   <script src="panel.js"></script>
 </body>
 </html>
