@@ -23,71 +23,15 @@ const { spawn } = require('child_process');
 
 const STORE_FILE = path.join(app.getPath('userData'), 'zerobreak-store.json');
 
-const DEFAULT_STATE = {
-  form: 'custom',         // cat | robot | slime | custom（自定义图片）
-  customImage: null,      // 用户上传的原始图片绝对路径
-  customGenIdle: null,    // 由原图在后台生成的 3D 站立帧路径
-  customGenWalk: null,    // 由原图在后台生成的 3D 行走帧路径
-  customGenActions: null, // 由原图生成的 3D 动作帧 { roll, groom, eat, sleep } 路径
-  water: {
-    enabled: true,
-    intervalMin: 45,      // 每隔多少分钟提醒喝水
-    lastRemindTs: 0
-  },
-  sit: {                  // 久坐提醒
-    enabled: false,
-    intervalMin: 60,
-    lastRemindTs: 0
-  },
-  pomodoro: {             // 番茄钟配置
-    workMin: 25,
-    breakMin: 5
-  },
-  dnd: {                  // 免打扰时段
-    enabled: false,
-    start: '22:00',
-    end: '08:00'
-  },
-  feed: {                 // 喂养玩法状态
-    waterRequest: false,      // 猫口渴，等主人喂水
-    waterNagTs: 0,            // 上次撒娇时间（没喂就隔几分钟再催）
-    mealRequest: false,       // 到饭点，等主人喂猫粮
-    mealNagTs: 0,
-    lastMealRequestDate: '',  // 当天是否已发过饭点提醒
-    lastMealFedDate: ''       // 当天是否已喂过猫粮
-  },
-  theme: 'light',         // light | dark
-  autoLaunch: false,      // 开机自启
-  stats: {                // 养成/成就
-    intimacy: 0,
-    waterDone: 0,
-    pomodoroDone: 0
-  },
-  meetings: [],           // { id, title, ts }  ts=毫秒时间戳
-  ddls: [],               // { id, title, ts }
-  notifiedMeetings: [],   // 已提醒过的会议 id
-  notifiedDdls: [],       // 已提醒过的 ddl id
-  petPos: null            // 桌宠窗口位置 { x, y }
-};
+const { normalizeState, readState } = require('./lib/store');
+const { mealSlotAt, mealEligible, inDndWindow, meetingNotice, ddlNotice, clearMarks, dateKey } = require('./lib/schedule');
 
 function loadState() {
-  let parsed = {};
-  try {
-    parsed = JSON.parse(fs.readFileSync(STORE_FILE, 'utf-8'));
-  } catch (e) {
-    parsed = {};
+  const res = readState(STORE_FILE);
+  if (res.corruptionBackup) {
+    console.error('[store] 状态文件损坏，已备份到', res.corruptionBackup);
   }
-  // 深合并一层，确保新增的嵌套默认项补齐（也兼容旧存储/损坏存储）
-  const merged = JSON.parse(JSON.stringify(DEFAULT_STATE));
-  Object.keys(parsed).forEach((k) => {
-    const v = parsed[k];
-    if (v && typeof v === 'object' && !Array.isArray(v) && merged[k] && typeof merged[k] === 'object') {
-      merged[k] = Object.assign({}, merged[k], v);
-    } else if (v !== undefined) {
-      merged[k] = v;
-    }
-  });
-  return merged;
+  return res.state;
 }
 
 function saveState() {
@@ -532,26 +476,8 @@ function refreshTrayMenu() {
       }))
     },
     { label: '🍅 开始番茄钟', click: () => startPomodoro() },
-    { label: '💧 喂水', click: () => {
-        const f = state.feed;
-        f.waterRequest = false; f.waterNagTs = 0;
-        state.water.lastRemindTs = Date.now();
-        state.stats.waterDone = (state.stats.waterDone || 0) + 1;
-        state.stats.intimacy = (state.stats.intimacy || 0) + 1;
-        saveState();
-        broadcastFeedState();
-        if (petWin) petWin.webContents.send('pet-say', { action: 'drink', text: '咕噜咕噜~ 喝饱啦！', mood: 'happy' });
-      } },
-    { label: '🍚 喂猫粮', click: () => {
-        const f = state.feed;
-        const d = new Date();
-        f.mealRequest = false; f.mealNagTs = 0;
-        f.lastMealFedDate = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
-        state.stats.intimacy = (state.stats.intimacy || 0) + 2;
-        saveState();
-        broadcastFeedState();
-        if (petWin) petWin.webContents.send('pet-say', { action: 'eat', text: '猫粮好吃~ 主人也要吃饭哦！', mood: 'happy' });
-      } },
+    { label: '💧 喂水', click: () => feedWater() },
+    { label: '🍚 喂猫粮', click: () => feedFood() },
     { label: '🐾 来个动作',
       submenu: [
         { label: '打滚露肚皮', click: () => petWin && petWin.webContents.send('pet-say', { action: 'roll' }) },
@@ -560,18 +486,12 @@ function refreshTrayMenu() {
         { label: '躺着睡觉', click: () => petWin && petWin.webContents.send('pet-say', { action: 'sleep' }) }
       ]
     },
-    { label: '💧 喝水打卡', click: () => { state.stats.waterDone = (state.stats.waterDone || 0) + 1; state.water.lastRemindTs = Date.now(); saveState(); petSay('咕噜咕噜~ 谢谢主人！', 'happy'); } },
+    { label: '💧 喝水打卡', click: () => { state.stats.waterDone += 1; state.water.lastRemindTs = Date.now(); saveState(); petSay('咕噜咕噜~ 谢谢主人！', 'happy'); } },
     {
       label: '😴 稍后提醒',
       submenu: [10, 20, 30].map((min) => ({
         label: `${min} 分钟`,
-        click: () => {
-          const now = Date.now();
-          if (state.water.enabled) state.water.lastRemindTs = now + min * 60000 - state.water.intervalMin * 60000;
-          if (state.sit.enabled) state.sit.lastRemindTs = now + min * 60000 - state.sit.intervalMin * 60000;
-          saveState();
-          petSay(`好的，${min} 分钟后再提醒~`, 'normal');
-        }
+        click: () => snoozeAll(min)
       }))
     },
     {
@@ -607,21 +527,9 @@ function petSay(text, mood = 'normal') {
   if (petWin) petWin.webContents.send('pet-say', { text, mood });
 }
 
-// 是否处于免打扰时段
+// 是否处于免打扰时段（纯逻辑在 lib/schedule.js，已单测）
 function inDnd() {
-  if (!state.dnd || !state.dnd.enabled) return false;
-  const parse = (s) => {
-    const [h, m] = String(s).split(':').map((n) => parseInt(n, 10));
-    return (h || 0) * 60 + (m || 0);
-  };
-  const now = new Date();
-  const cur = now.getHours() * 60 + now.getMinutes();
-  const start = parse(state.dnd.start);
-  const end = parse(state.dnd.end);
-  if (start === end) return false;
-  // 跨午夜（如 22:00 - 08:00）
-  if (start > end) return cur >= start || cur < end;
-  return cur >= start && cur < end;
+  return inDndWindow(state.dnd, Date.now());
 }
 
 function notify(title, body) {
@@ -654,21 +562,19 @@ function checkReminders() {
     }
   }
 
-  // 饭点提醒 → 到点讨猫粮：中午 11:30-13:00、晚上 17:30-19:00，各提醒一次（没喂的话窗口内再催）
-  const d = new Date();
-  const hm = d.getHours() * 60 + d.getMinutes();
-  const today = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
-  const inLunch = hm >= 11 * 60 + 30 && hm <= 13 * 60;
-  const inDinner = hm >= 17 * 60 + 30 && hm <= 19 * 60;
-  if ((inLunch || inDinner) && state.feed.lastMealRequestDate !== today && state.feed.lastMealFedDate !== today) {
+  // 饭点提醒 → 到点讨猫粮：午餐/晚餐各自独立（日期+餐次去重），窗口内未喂会再催
+  const slot = mealSlotAt(now);
+  if (slot && !state.feed.mealRequest && mealEligible(state.feed, slot, now)) {
     state.feed.mealRequest = true;
+    state.feed.mealSlot = slot;
     state.feed.mealNagTs = now;
-    state.feed.lastMealRequestDate = today;
+    state.feed.lastMealRequest[slot] = dateKey(now);
     saveState();
     broadcastFeedState();
-    notify('🍚 到饭点啦', '该吃饭了~ 记得给猫咪喂猫粮，自己也好好吃饭！');
-    petSay('到饭点啦！主人先去吃饭，顺便喂我吃猫粮~', 'happy');
-  } else if (state.feed.mealRequest && (inLunch || inDinner) && now - state.feed.mealNagTs > 10 * 60 * 1000) {
+    const label = slot === 'lunch' ? '午饭时间到啦' : '晚饭时间到啦';
+    notify('🍚 到饭点啦', `${label}~ 记得给猫咪喂猫粮，自己也好好吃饭！`);
+    petSay(`${label}！主人先去吃饭，顺便喂我吃猫粮~`, 'happy');
+  } else if (state.feed.mealRequest && slot && now - state.feed.mealNagTs > 10 * 60 * 1000) {
     state.feed.mealNagTs = now;
     saveState();
     petSay('肚子咕咕叫…还没吃饭吗，主人？', 'alert');
@@ -686,45 +592,32 @@ function checkReminders() {
     }
   }
 
-  // 会议提醒：提前 5 分钟 + 到点
+  // 会议提醒：临近/到点各一次；休眠跨窗只补发最有意义的一条（纯逻辑已单测）
   state.meetings.forEach((m) => {
-    const diff = m.ts - now;
-    const key5 = m.id + ':5';
-    const key0 = m.id + ':0';
-    if (diff <= 5 * 60 * 1000 && diff > 0 && !state.notifiedMeetings.includes(key5)) {
-      state.notifiedMeetings.push(key5);
+    const notice = meetingNotice(m, now, state.notifiedMeetings);
+    if (!notice) return;
+    if (notice.markKeys && notice.markKeys.length) {
+      notice.markKeys.forEach((k) => { if (!state.notifiedMeetings.includes(k)) state.notifiedMeetings.push(k); });
       saveState();
-      notify('📅 会议即将开始', `「${m.title}」还有约 5 分钟开始`);
-      petSay(`「${m.title}」快开会啦！`, 'alert');
     }
-    if (diff <= 0 && diff > -60 * 1000 && !state.notifiedMeetings.includes(key0)) {
-      state.notifiedMeetings.push(key0);
-      saveState();
-      notify('📅 会议开始', `「${m.title}」现在开始`);
-      petSay(`开会时间到：「${m.title}」`, 'alert');
+    if (notice.title) {
+      notify(notice.title, notice.body);
+      if (notice.pet) petSay(notice.pet, 'alert');
     }
   });
 
-  // DDL 提醒：提前 1 天、1 小时、到点
+  // DDL 提醒：提前 1 天/1 小时/到点；只补发最紧迫一条，避免休眠后补发一串
   state.ddls.forEach((d) => {
-    const diff = d.ts - now;
-    const checks = [
-      { k: 'd', ms: 24 * 60 * 60 * 1000, label: '还有 1 天' },
-      { k: 'h', ms: 60 * 60 * 1000, label: '还有 1 小时' },
-      { k: '0', ms: 0, label: '已到截止时间' }
-    ];
-    checks.forEach((c) => {
-      const key = d.id + ':' + c.k;
-      const hit = c.k === '0'
-        ? (diff <= 0 && diff > -60 * 1000)
-        : (diff <= c.ms && diff > c.ms - 60 * 1000);
-      if (hit && !state.notifiedDdls.includes(key)) {
-        state.notifiedDdls.push(key);
-        saveState();
-        notify('⏰ DDL 提醒', `「${d.title}」${c.label}`);
-        petSay(`DDL：「${d.title}」${c.label}！`, 'alert');
-      }
-    });
+    const notice = ddlNotice(d, now, state.notifiedDdls);
+    if (!notice) return;
+    if (notice.markKeys && notice.markKeys.length) {
+      notice.markKeys.forEach((k) => { if (!state.notifiedDdls.includes(k)) state.notifiedDdls.push(k); });
+      saveState();
+    }
+    if (notice.title) {
+      notify(notice.title, notice.body);
+      if (notice.pet) petSay(notice.pet, 'alert');
+    }
   });
 }
 
@@ -775,7 +668,8 @@ function publicState() {
   return {
     form: state.form,
     hasCustomImage: !!customImagePath(),
-    feed: state.feed,
+    // UI 契约：布尔徽标状态（与 feed-state 事件形状一致）
+    feed: { water: !!state.feed.waterRequest, meal: !!state.feed.mealRequest },
     water: state.water,
     sit: state.sit,
     pomodoro: state.pomodoro,
@@ -788,6 +682,51 @@ function publicState() {
   };
 }
 
+// ---------- 喂养领域函数（托盘 / IPC / 面板统一入口） ----------
+function feedWater() {
+  const now = Date.now();
+  state.feed.waterRequest = false;
+  state.feed.waterNagTs = 0;
+  state.water.lastRemindTs = now;
+  state.stats.waterDone += 1;
+  state.stats.intimacy += 1;
+  saveState();
+  broadcastFeedState();
+  if (petWin) petWin.webContents.send('pet-say', { action: 'drink', text: '咕噜咕噜~ 猫咪喝饱啦，主人也喝水了吗？', mood: 'happy' });
+  notify('💧 喂水完成', '猫咪喝饱啦，主人也记得喝水~');
+}
+
+function feedFood() {
+  const now = Date.now();
+  state.feed.mealRequest = false;
+  state.feed.mealNagTs = 0;
+  state.feed.mealSlot = null;
+  // 语义：一天只喂一次猫粮；两个餐次都记为已喂，避免当天重复讨粮
+  state.feed.lastMealFed.lunch = dateKey(now);
+  state.feed.lastMealFed.dinner = dateKey(now);
+  state.stats.intimacy += 2;
+  saveState();
+  broadcastFeedState();
+  if (petWin) petWin.webContents.send('pet-say', { action: 'eat', text: '猫粮好吃~ 主人也要好好吃饭哦！', mood: 'happy' });
+  notify('🍚 喂饭完成', '猫咪吃饱啦，主人也别忘了自己的饭~');
+}
+
+function snoozeAll(minutes) {
+  const mins = Math.min(120, Math.max(1, parseInt(minutes, 10) || 10));
+  const now = Date.now();
+  if (state.water.enabled) state.water.lastRemindTs = now + mins * 60000 - state.water.intervalMin * 60000;
+  if (state.sit.enabled) state.sit.lastRemindTs = now + mins * 60000 - state.sit.intervalMin * 60000;
+  state.feed.waterRequest = false;
+  state.feed.waterNagTs = 0;
+  state.feed.mealRequest = false;
+  state.feed.mealNagTs = 0;
+  state.feed.mealSlot = null;
+  saveState();
+  broadcastFeedState();
+  petSay(`好的，${mins} 分钟后再提醒~`, 'normal');
+  return mins;
+}
+
 // ---------- IPC ----------
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -795,7 +734,12 @@ function uid() {
 
 ipcMain.handle('get-state', () => publicState());
 
-ipcMain.handle('set-form', (e, form) => { setForm(form); return publicState(); });
+ipcMain.handle('set-form', (e, form) => {
+  const allowed = ['cat', 'robot', 'slime', 'custom'];
+  if (!allowed.includes(form)) return { ok: false, error: 'invalid form', state: publicState() };
+  setForm(form);
+  return publicState();
+});
 
 // 自定义图片：读取当前图片为 dataURL（受 CSP 限制，用 data: 而非 file://）
 ipcMain.handle('get-custom-image', () => customImageDataUrl());
@@ -855,6 +799,7 @@ ipcMain.handle('add-meeting', (e, payload) => {
 
 ipcMain.handle('remove-meeting', (e, id) => {
   state.meetings = state.meetings.filter((m) => m.id !== id);
+  state.notifiedMeetings = clearMarks(state.notifiedMeetings, String(id));
   saveState();
   return publicState();
 });
@@ -871,6 +816,7 @@ ipcMain.handle('add-ddl', (e, payload) => {
 
 ipcMain.handle('remove-ddl', (e, id) => {
   state.ddls = state.ddls.filter((d) => d.id !== id);
+  state.notifiedDdls = clearMarks(state.notifiedDdls, String(id));
   saveState();
   return publicState();
 });
@@ -890,7 +836,11 @@ ipcMain.handle('set-sit', (e, cfg) => {
 // 免打扰
 ipcMain.handle('set-dnd', (e, cfg) => {
   const c = cfg || {};
-  const okTime = (s) => /^\d{1,2}:\d{2}$/.test(String(s));
+  const okTime = (s) => {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(String(s || ''));
+    if (!m) return false;
+    return Number(m[1]) <= 23 && Number(m[2]) <= 59;
+  };
   state.dnd = {
     enabled: !!c.enabled,
     start: okTime(c.start) ? c.start : state.dnd.start,
@@ -932,61 +882,24 @@ ipcMain.handle('set-autolaunch', (e, enabled) => {
 
 // 亲密度 +1（桌宠被抚摸/互动）
 ipcMain.handle('add-intimacy', (e, n) => {
-  state.stats.intimacy = (state.stats.intimacy || 0) + (parseInt(n, 10) || 1);
+  const delta = Math.min(10, Math.max(1, parseInt(n, 10) || 1));
+  state.stats.intimacy += delta;
   saveState();
   return state.stats;
 });
 
-// 喝水打卡
+// 喝水打卡（不计亲密度，仅统计）
 ipcMain.handle('drink-water', () => {
-  state.stats.waterDone = (state.stats.waterDone || 0) + 1;
+  state.stats.waterDone += 1;
   state.water.lastRemindTs = Date.now(); // 顺延下次提醒
   saveState();
   return state.stats;
 });
 
-// 喂水：清除讨水状态，桌宠播喝水动作
-ipcMain.handle('feed-water', () => {
-  const f = state.feed;
-  f.waterRequest = false;
-  f.waterNagTs = 0;
-  state.water.lastRemindTs = Date.now();   // 下一轮喝水周期重新计算
-  state.stats.waterDone = (state.stats.waterDone || 0) + 1;
-  state.stats.intimacy = (state.stats.intimacy || 0) + 1;
-  saveState();
-  broadcastFeedState();
-  if (petWin) petWin.webContents.send('pet-say', { action: 'drink', text: '咕噜咕噜~ 猫咪喝饱啦，主人也喝水了吗？', mood: 'happy' });
-  notify('💧 喂水完成', '猫咪喝饱啦，主人也记得喝水~');
-  return publicState();
-});
-
-// 喂猫粮：清除讨粮状态，桌宠播吃饭动作
-ipcMain.handle('feed-food', () => {
-  const f = state.feed;
-  const d = new Date();
-  const today = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
-  f.mealRequest = false;
-  f.mealNagTs = 0;
-  f.lastMealFedDate = today;
-  state.stats.intimacy = (state.stats.intimacy || 0) + 2;
-  saveState();
-  broadcastFeedState();
-  if (petWin) petWin.webContents.send('pet-say', { action: 'eat', text: '猫粮好吃~ 主人也要好好吃饭哦！', mood: 'happy' });
-  notify('🍚 喂饭完成', '猫咪吃饱啦，主人也别忘了自己的饭~');
-  return publicState();
-});
-
-// 贪睡：把所有周期提醒顺延 N 分钟
-ipcMain.on('snooze', (e, minutes) => {
-  const ms = (parseInt(minutes, 10) || 10) * 60 * 1000;
-  const now = Date.now();
-  if (state.water.enabled) state.water.lastRemindTs = now + ms - state.water.intervalMin * 60 * 1000;
-  if (state.sit.enabled) state.sit.lastRemindTs = now + ms - state.sit.intervalMin * 60 * 1000;
-  if (state.feed) { state.feed.waterRequest = false; state.feed.mealRequest = false; }
-  saveState();
-  broadcastFeedState();
-  petSay(`好的，${parseInt(minutes, 10) || 10} 分钟后再提醒~`, 'normal');
-});
+// 喂水 / 喂猫粮 / 稍后提醒：统一走领域函数
+ipcMain.handle('feed-water', () => { feedWater(); return publicState(); });
+ipcMain.handle('feed-food', () => { feedFood(); return publicState(); });
+ipcMain.on('snooze', (e, minutes) => { snoozeAll(minutes); });
 
 // 桌宠点击穿透控制：鼠标在宠物上时可交互，否则穿透
 ipcMain.on('set-ignore-mouse', (e, ignore) => {
@@ -1000,7 +913,7 @@ ipcMain.handle('get-win-pos', () => {
   return { x, y };
 });
 ipcMain.on('set-win-pos', (e, x, y) => {
-  if (!petWin) return;
+  if (!petWin || !Number.isFinite(x) || !Number.isFinite(y)) return;
   const [w, h] = petWin.getSize();
   const disp = screen.getDisplayNearestPoint({ x: Math.round(x), y: Math.round(y) });
   const b = disp.workArea;
@@ -1009,13 +922,16 @@ ipcMain.on('set-win-pos', (e, x, y) => {
   petWin.setPosition(cx, cy);
 });
 ipcMain.on('save-win-pos', (e, x, y) => {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return;
   state.petPos = { x: Math.round(x), y: Math.round(y) };
   saveState();
 });
 
 ipcMain.on('pet-say', (e, msg) => petSay(msg.text, msg.mood));
 ipcMain.on('trigger-action', (e, name) => {
-  if (petWin) petWin.webContents.send('pet-say', { action: String(name || '') });
+  const allowed = ['roll', 'groom', 'eat', 'sleep', 'drink'];
+  if (!allowed.includes(name)) return;
+  if (petWin) petWin.webContents.send('pet-say', { action: name });
 });
 ipcMain.on('open-panel', openPanel);
 
