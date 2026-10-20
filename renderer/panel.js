@@ -288,6 +288,11 @@ document.getElementById('pet-praise').addEventListener('click', async () => {
   window.api.petSay({ text: '好舒服~ 最喜欢你啦！', mood: 'happy' });
 });
 
+// 动作触发
+document.querySelectorAll('.act-btn').forEach((btn) => {
+  btn.addEventListener('click', () => window.api.triggerAction(btn.dataset.act));
+});
+
 // ---------- 久坐 ----------
 const sitEnabled = document.getElementById('sit-enabled');
 const sitInterval = document.getElementById('sit-interval');

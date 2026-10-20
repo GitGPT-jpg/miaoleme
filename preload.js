@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('api', {
   setWinPos: (x, y) => ipcRenderer.send('set-win-pos', x, y),
   saveWinPos: (x, y) => ipcRenderer.send('save-win-pos', x, y),
   petSay: (msg) => ipcRenderer.send('pet-say', msg),
+  triggerAction: (name) => ipcRenderer.send('trigger-action', name),
   openPanel: () => ipcRenderer.send('open-panel'),
 
   // 事件订阅

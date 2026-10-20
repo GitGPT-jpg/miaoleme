@@ -77,6 +77,12 @@ let state = loadState();
 // ---------- 自定义图片 ----------
 const BUNDLED_IDLE = path.join(__dirname, 'assets', 'cat-3d-idle.png');
 const BUNDLED_WALK = path.join(__dirname, 'assets', 'cat-3d-walk.png');
+const BUNDLED_ACTIONS = {
+  roll:  path.join(__dirname, 'assets', 'cat-3d-roll.png'),
+  groom: path.join(__dirname, 'assets', 'cat-3d-groom.png'),
+  eat:   path.join(__dirname, 'assets', 'cat-3d-eat.png'),
+  sleep: path.join(__dirname, 'assets', 'cat-3d-sleep.png')
+};
 
 function fileToDataUrl(p) {
   if (!p || !fs.existsSync(p)) return null;
@@ -102,13 +108,22 @@ function customImageDataUrl() {
   return fileToDataUrl(customImagePath());
 }
 
-// 返回 { idle, walk } 两帧：用户自定义单图时 walk=idle；默认内置 3D 猫有独立行走帧
+// 返回 { idle, walk, actions } ：用户自定义单图时 walk=idle 且无动作；默认内置 3D 猫有独立行走帧与多个动作帧
 function customFrames() {
   if (state.customImage && fs.existsSync(state.customImage)) {
     const u = fileToDataUrl(state.customImage);
-    return { idle: u, walk: u };
+    return { idle: u, walk: u, actions: {} };
   }
-  return { idle: fileToDataUrl(BUNDLED_IDLE), walk: fileToDataUrl(BUNDLED_WALK) || fileToDataUrl(BUNDLED_IDLE) };
+  const actions = {};
+  Object.keys(BUNDLED_ACTIONS).forEach((k) => {
+    const u = fileToDataUrl(BUNDLED_ACTIONS[k]);
+    if (u) actions[k] = u;
+  });
+  return {
+    idle: fileToDataUrl(BUNDLED_IDLE),
+    walk: fileToDataUrl(BUNDLED_WALK) || fileToDataUrl(BUNDLED_IDLE),
+    actions
+  };
 }
 
 
@@ -236,6 +251,15 @@ function refreshTrayMenu() {
       }))
     },
     { label: '🍅 开始番茄钟', click: () => startPomodoro() },
+    {
+      label: '🐾 来个动作',
+      submenu: [
+        { label: '打滚露肚皮', click: () => petWin && petWin.webContents.send('pet-say', { action: 'roll' }) },
+        { label: '舔毛', click: () => petWin && petWin.webContents.send('pet-say', { action: 'groom' }) },
+        { label: '吃猫粮', click: () => petWin && petWin.webContents.send('pet-say', { action: 'eat' }) },
+        { label: '躺着睡觉', click: () => petWin && petWin.webContents.send('pet-say', { action: 'sleep' }) }
+      ]
+    },
     { label: '💧 喝水打卡', click: () => { state.stats.waterDone = (state.stats.waterDone || 0) + 1; state.water.lastRemindTs = Date.now(); saveState(); petSay('咕噜咕噜~ 谢谢主人！', 'happy'); } },
     {
       label: '😴 稍后提醒',
@@ -624,6 +648,9 @@ ipcMain.on('save-win-pos', (e, x, y) => {
 });
 
 ipcMain.on('pet-say', (e, msg) => petSay(msg.text, msg.mood));
+ipcMain.on('trigger-action', (e, name) => {
+  if (petWin) petWin.webContents.send('pet-say', { action: String(name || '') });
+});
 ipcMain.on('open-panel', openPanel);
 
 // ---------- 生命周期 ----------

@@ -95,6 +95,18 @@ html, body {
   50%     { transform: translateX(4px) rotateY(6deg); }
 }
 
+/* 动作定格：停止浮动，改为轻微呼吸；睡觉更平缓 */
+#pet.acting .pet-photo-img { animation: actBreathe 2.6s ease-in-out infinite; }
+#pet.act-sleep .pet-photo-img { animation: actSleep 3.4s ease-in-out infinite; }
+@keyframes actBreathe {
+  0%,100% { transform: translateY(0) scale(1); }
+  50%     { transform: translateY(-2px) scale(1.02); }
+}
+@keyframes actSleep {
+  0%,100% { transform: scale(1); }
+  50%     { transform: scale(1.03); }
+}
+
 .pet-shadow {
   width: 80px;
   height: 14px;
