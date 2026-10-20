@@ -43,6 +43,29 @@ let petWin = null;
 let panelWin = null;
 let tray = null;
 
+// 安全加固：禁止导航到外部地址、禁止新开窗口、注入 CSP
+function hardenWebContents(win) {
+  const wc = win.webContents;
+  wc.setWindowOpenHandler(() => ({ action: 'deny' }));
+  wc.on('will-navigate', (e) => e.preventDefault());
+  wc.session.webRequest.onHeadersReceived((details, cb) => {
+    cb({
+      responseHeaders: Object.assign({}, details.responseHeaders, {
+        'Content-Security-Policy': ["default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'"]
+      })
+    });
+  });
+}
+
+// 输入校验工具
+function safeTitle(s) {
+  return String(s == null ? '' : s).slice(0, 120).trim();
+}
+function safeTs(ts) {
+  const n = Number(ts);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function createPetWindow() {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
   const winW = 220;
@@ -64,10 +87,12 @@ function createPetWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      sandbox: true
     }
   });
   petWin.setAlwaysOnTop(true, 'screen-saver');
+  hardenWebContents(petWin);
   petWin.loadFile(path.join(__dirname, 'renderer', 'pet.html'));
   // 点击穿透由渲染进程根据鼠标是否悬停在宠物上动态控制
 }
@@ -81,9 +106,11 @@ function createPanelWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      sandbox: true
     }
   });
+  hardenWebContents(panelWin);
   panelWin.loadFile(path.join(__dirname, 'renderer', 'panel.html'));
   panelWin.on('close', (e) => {
     // 关闭时隐藏而非退出
@@ -230,13 +257,20 @@ ipcMain.handle('get-state', () => publicState());
 ipcMain.handle('set-form', (e, form) => { setForm(form); return publicState(); });
 
 ipcMain.handle('set-water', (e, cfg) => {
-  state.water = Object.assign({}, state.water, cfg);
+  const c = cfg || {};
+  state.water = Object.assign({}, state.water, {
+    enabled: !!c.enabled,
+    intervalMin: Math.min(240, Math.max(5, parseInt(c.intervalMin, 10) || 45))
+  });
   state.water.lastRemindTs = Date.now();
   saveState();
   return publicState();
 });
 
-ipcMain.handle('add-meeting', (e, { title, ts }) => {
+ipcMain.handle('add-meeting', (e, payload) => {
+  const title = safeTitle(payload && payload.title);
+  const ts = safeTs(payload && payload.ts);
+  if (!title || !ts) return publicState();
   state.meetings.push({ id: uid(), title, ts });
   state.meetings.sort((a, b) => a.ts - b.ts);
   saveState();
@@ -249,7 +283,10 @@ ipcMain.handle('remove-meeting', (e, id) => {
   return publicState();
 });
 
-ipcMain.handle('add-ddl', (e, { title, ts }) => {
+ipcMain.handle('add-ddl', (e, payload) => {
+  const title = safeTitle(payload && payload.title);
+  const ts = safeTs(payload && payload.ts);
+  if (!title || !ts) return publicState();
   state.ddls.push({ id: uid(), title, ts });
   state.ddls.sort((a, b) => a.ts - b.ts);
   saveState();
