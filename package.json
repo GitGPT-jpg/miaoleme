@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node launch.js",
     "start:direct": "electron .",
+    "test": "node --test",
     "pack": "electron-builder --dir",
     "dist": "electron-builder"
   },
@@ -21,6 +22,7 @@
     "files": [
       "main.js",
       "launch.js",
+      "lib/**/*",
       "preload.js",
       "renderer/**/*",
       "assets/**/*"

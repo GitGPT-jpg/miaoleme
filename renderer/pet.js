@@ -146,7 +146,7 @@ let moved = false;
 function overInteractive(x, y) {
   const el = document.elementFromPoint(x, y);
   if (!el) return false;
-  return el.closest('#pet') || el.closest('#menu') || el.closest('#bubble');
+  return el.closest('#pet') || el.closest('#menu') || el.closest('#bubble') || el.closest('#feed-badge');
 }
 
 function setIgnore(v) {
