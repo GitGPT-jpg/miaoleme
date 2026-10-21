@@ -68,6 +68,15 @@ html, body {
   transition: opacity 0.45s ease, filter 0.45s ease;
 }
 .pet-photo-b { opacity: 0; }
+.rig-canvas {
+  position: absolute;
+  bottom: 0;
+  width: 176px;
+  height: 160px;
+  display: none;
+}
+#pet.rig-on .rig-canvas { display: block; }
+#pet.rig-on .pet-photo-img { display: none; }
 /* 朝向翻转 */
 #pet.face-left .pet-photo-img { transform: scaleX(-1); }
 

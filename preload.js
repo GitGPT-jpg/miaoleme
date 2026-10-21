@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('api', {
   setForm: (form) => ipcRenderer.invoke('set-form', form),
   getCustomImage: () => ipcRenderer.invoke('get-custom-image'),
   getCustomFrames: () => ipcRenderer.invoke('get-custom-frames'),
+  getRigParts: () => ipcRenderer.invoke('get-rig-parts'),
   uploadCustomImage: () => ipcRenderer.invoke('upload-custom-image'),
   getGenJob: () => ipcRenderer.invoke('get-gen-job'),
   cancelGen: () => ipcRenderer.invoke('cancel-gen'),
