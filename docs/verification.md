@@ -69,6 +69,11 @@
 | 关闭喝水提醒清理待喂请求 | 代码路径复核（set-water 关闭时清 waterRequest 并广播） | PASS（代码级） |
 | 退出时杀生成子进程 | 代码路径复核（genChildren 集合 + will-quit SIGKILL） | PASS（代码级） |
 | 单实例 | 启动后再次启动，统计非 helper 主进程数 | PASS（1 → 1，第二次立即退出） |
+| IPC 发送方校验 | 代码复核 + 启动后面板/桌宠 IPC 正常渲染 | PASS（仅 petWin/panelWin 可信；异常调用抛 untrusted） |
+| 上传体积/魔数校验 | 代码复核（≤20MB、PNG/JPEG/GIF/WebP 魔数） | PASS（代码级；非法文件返回可读错误并提示） |
+| 通知点击唤起面板 | 代码复核（Notification click → openPanel） | PASS（代码级，点击手测 NOT_RUN） |
+| 帧 dataURL 缓存 | 代码复核（path+mtime+size 键，40 条上限） | PASS（代码级） |
+| 生成按钮语义 | 代码复核（生成中仅取消；失败/部分/取消仅重试） | PASS（代码级，UI 手测 NOT_RUN） |
 | 残留 running 任务标记 | 预置 `genJob.status=running` → 重启 → 读取 store | PASS（status=failed，errorCode=interrupted，activePose=null） |
 | 拖拽中停止走路动画类 | 代码复核（beginDrag 移除 walking 类） | PASS（代码级，交互手测 NOT_RUN） |
 | 开发版启动 | `npm start`，进程存活，日志仅登录项权限报错（沙箱限制） | PASS |
