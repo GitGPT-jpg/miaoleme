@@ -623,24 +623,8 @@ function setForm(form) {
 }
 
 function petSay(text, mood = 'normal', force = false) {
-  if (state.quiet && !force) return;   // 小游戏战绩（只接受 0/1 的增量）
-handle('record-rps', (e, outcome) => {
-  if (!['win', 'lose', 'draw'].includes(outcome)) return publicState();
-  state.games.rps[outcome] += 1;
-  saveState();
-  return publicState();
-});
-
-// 自定义吃饭菜单
-handle('set-meal-menu', (e, slot, items) => {
-  if (slot !== 'lunch' && slot !== 'dinner') return publicState();
-  const arr = Array.isArray(items) ? items.filter((x) => typeof x === 'string').map((x) => x.trim().slice(0, 20)).filter(Boolean).slice(0, 12) : [];
-  state.mealMenus[slot] = arr.length >= 2 ? arr : null;
-  saveState();
-  return publicState();
-});
-
-// 安静模式：自动气泡静默，用户主动操作仍可反馈
+  // 安静模式：自动气泡静默，用户主动操作仍可反馈
+  if (state.quiet && !force) return;
   if (petWin) petWin.webContents.send('pet-say', { text, mood });
 }
 
@@ -650,24 +634,7 @@ function inDnd() {
 }
 
 function notify(title, body) {
-  if (state.quiet) return;         // 小游戏战绩（只接受 0/1 的增量）
-handle('record-rps', (e, outcome) => {
-  if (!['win', 'lose', 'draw'].includes(outcome)) return publicState();
-  state.games.rps[outcome] += 1;
-  saveState();
-  return publicState();
-});
-
-// 自定义吃饭菜单
-handle('set-meal-menu', (e, slot, items) => {
-  if (slot !== 'lunch' && slot !== 'dinner') return publicState();
-  const arr = Array.isArray(items) ? items.filter((x) => typeof x === 'string').map((x) => x.trim().slice(0, 20)).filter(Boolean).slice(0, 12) : [];
-  state.mealMenus[slot] = arr.length >= 2 ? arr : null;
-  saveState();
-  return publicState();
-});
-
-// 安静模式
+  if (state.quiet) return;         // 安静模式
   if (inDnd()) return;             // 免打扰时段静默
   if (Notification.isSupported()) {
     const n = new Notification({ title, body });
@@ -847,13 +814,24 @@ function isTrustedSender(e) {
   if (!wc) return false;
   return (petWin && wc === petWin.webContents) || (panelWin && wc === panelWin.webContents);
 }
+const registeredChannels = new Set();
 function handle(channel, fn) {
+  if (registeredChannels.has('h:' + channel)) {
+    console.error('[ipc] duplicate handler registration ignored:', channel);
+    return;
+  }
+  registeredChannels.add('h:' + channel);
   ipcMain.handle(channel, (e, ...args) => {
     if (!isTrustedSender(e)) throw new Error('untrusted sender');
     return fn(e, ...args);
   });
 }
 function on(channel, fn) {
+  if (registeredChannels.has('o:' + channel)) {
+    console.error('[ipc] duplicate listener registration ignored:', channel);
+    return;
+  }
+  registeredChannels.add('o:' + channel);
   ipcMain.on(channel, (e, ...args) => {
     if (!isTrustedSender(e)) return;
     fn(e, ...args);
