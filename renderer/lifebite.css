@@ -1,0 +1,56 @@
+/* 食物寿命实验室（吃饭页） */
+.lb-card .lb-intro { margin-top: 0; }
+.lb-chips { display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px 10px; margin-top: 10px; }
+.lb-chip { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 64px;
+  padding: 8px 10px; border-radius: 12px; background: var(--soft); color: var(--text); border: 2px solid transparent; }
+.lb-chip:hover { filter: none; border-color: var(--line); }
+.lb-chip.on { border-color: var(--brand); background: var(--accent-soft); }
+.lb-chip-emo { font-size: 22px; line-height: 1.1; }
+.lb-chip-name { font-size: 12px; }
+.lb-chip-tag { font-size: 11px; font-weight: 600; }
+.lb-chip-tag.good { color: #22b573; }
+.lb-chip-tag.bad { color: #ef5a76; }
+
+.lb-detail { border-top: 1px solid var(--line); padding-top: 12px; }
+.lb-head { display: flex; align-items: center; gap: 10px; }
+.lb-emo { font-size: 32px; }
+.lb-title { display: flex; flex-direction: column; min-width: 0; }
+.lb-title small { color: var(--muted); font-size: 11px; line-height: 1.4; }
+.lb-kcal { margin-left: auto; text-align: right; }
+.lb-kcal b { display: block; font-size: 18px; }
+.lb-kcal small { color: var(--muted); font-size: 10px; }
+
+.lb-macros { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 12px 0 6px; }
+.lb-macro { background: var(--soft); border-radius: 10px; padding: 8px 6px; text-align: center; }
+.lb-macro-v { display: block; font-size: 13px; font-weight: 700; }
+.lb-macro-l { display: block; font-size: 10px; color: var(--muted); margin: 2px 0 6px; }
+.lb-macro-bar { display: block; height: 4px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.lb-macro-bar i, .lb-nrow-bar i { display: block; height: 100%; border-radius: 4px; }
+
+.lb-nutri { display: flex; flex-direction: column; gap: 7px; margin-top: 10px; }
+.lb-nrow { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.lb-nrow-lab { width: 76px; flex: 0 0 auto; color: var(--muted); }
+.lb-nrow-bar { flex: 1; height: 5px; border-radius: 5px; background: var(--line); overflow: hidden; }
+.lb-nrow-val { width: 52px; text-align: right; font-weight: 600; }
+
+.lb-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.lb-pill { font-size: 11px; padding: 3px 9px; border-radius: 99px; background: var(--soft); color: var(--muted); }
+.lb-pill.g { background: rgba(34,181,115,.14); color: #1f9c63; }
+.lb-pill.r { background: rgba(239,90,118,.14); color: #d34a63; }
+
+.lb-life { text-align: center; margin-top: 14px; padding: 12px; border-radius: 12px; background: var(--soft); }
+.lb-life-num { font-size: 34px; font-weight: 800; letter-spacing: -1px; line-height: 1; }
+.lb-life-num.good { color: #22b573; }
+.lb-life-num.bad { color: #ef5a76; }
+.lb-life-unit { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.lb-verdict { font-size: 13px; font-weight: 700; margin-top: 8px; }
+.lb-verdict.good { color: #1f9c63; }
+.lb-verdict.bad { color: #d34a63; }
+.lb-explain { font-size: 12px; color: var(--muted); line-height: 1.6; margin-top: 8px; text-align: left; }
+
+.lb-proj { display: flex; gap: 8px; margin-top: 10px; }
+.lb-proj div { flex: 1; text-align: center; background: var(--soft); border-radius: 10px; padding: 8px 4px; }
+.lb-proj b { display: block; font-size: 14px; }
+.lb-proj b.good { color: #1f9c63; }
+.lb-proj b.bad { color: #d34a63; }
+.lb-proj span { font-size: 10px; color: var(--muted); }

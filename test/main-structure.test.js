@@ -50,3 +50,12 @@ test('退出路径保留番茄快照（不得调用 stopPomodoro 清空）', () 
   assert.equal(/stopPomodoro\s*\(/.test(block), false, 'will-quit 内不应调用 stopPomodoro');
   assert.match(block, /clearInterval\(pomo\.timer\)/);
 });
+
+test('回归：上传入口不得引用未定义的 refs/常量', () => {
+  assert.equal(/RIG_PARTS_BODY|RIG_PARTS_HEAD|RIG_PARTS_TAIL/.test(SRC), false, '内置骨骼常量引用已修复');
+  const idx = SRC.indexOf("handle('upload-custom-image'");
+  assert.ok(idx > 0);
+  const block = SRC.slice(idx, idx + 2200);
+  assert.match(block, /planUploadCopies\(files/, '上传入口使用 planUploadCopies');
+  assert.match(block, /const refs = plan\.map/, 'refs 有定义后再使用');
+});
