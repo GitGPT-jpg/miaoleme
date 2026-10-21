@@ -110,3 +110,20 @@ test('默认值对象不被 normalize 结果共享引用污染', () => {
   assert.equal(DEFAULT_STATE.water.intervalMin, 45);
   assert.equal(DEFAULT_STATE.stats.intimacy, 0);
 });
+
+test('自定义吃饭菜单：过滤非法项并保留合法菜单', () => {
+  const s = normalizeState({
+    mealMenus: { lunch: ['黄焖鸡', '', 3, '麻辣烫', '沙拉'], dinner: ['只有一个'] }
+  });
+  assert.deepEqual(s.mealMenus.lunch, ['黄焖鸡', '麻辣烫', '沙拉']);
+  assert.equal(s.mealMenus.dinner, null, '少于 2 项视为未设置');
+  const empty = normalizeState({});
+  assert.deepEqual(empty.mealMenus, { lunch: null, dinner: null });
+});
+
+test('自定义吃饭菜单：数量上限 12 项，单项 20 字', () => {
+  const many = Array.from({ length: 20 }, (_, i) => `菜品${i}`.repeat(10));
+  const s = normalizeState({ mealMenus: { lunch: many } });
+  assert.equal(s.mealMenus.lunch.length, 12);
+  assert.ok(s.mealMenus.lunch.every((x) => x.length <= 20));
+});
