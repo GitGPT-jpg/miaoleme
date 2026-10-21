@@ -53,6 +53,9 @@ contextBridge.exposeInMainWorld('api', {
   onFeedState: (cb) => ipcRenderer.on('feed-state', (e, s) => cb(s)),
   onRigRefresh: (cb) => ipcRenderer.on('rig-refresh', () => cb()),
   onCursor: (cb) => ipcRenderer.on('cursor', (e, p) => cb(p)),
+  onDemoTab: (cb) => ipcRenderer.on('demo-tab', (e, t) => cb(t)),
+  onDemoSpin: (cb) => ipcRenderer.on('demo-spin', () => cb()),
+  startDemo: () => ipcRenderer.invoke('demo-start'),
   onStateUpdated: (cb) => ipcRenderer.on('state-updated', (e, s) => cb(s)),
   onPomodoroTick: (cb) => ipcRenderer.on('pomodoro-tick', (e, p) => cb(p)),
   onGenStatus: (cb) => ipcRenderer.on('gen-status', (e, s) => cb(s))
