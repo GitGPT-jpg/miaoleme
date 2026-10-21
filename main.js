@@ -40,6 +40,7 @@ const { restorePomodoro, pomoSnapshot } = require('./lib/pomodoro');
 const { buildBundledSequences, ACTION_META, WALK } = require('./lib/sequences');
 const { RIG_PARTS: RIG_PLAN, rigFilePath, coreRigPresent, optionalRigPresent } = require('./lib/rig');
 const { alphaBBox, heightScale } = require('./lib/frameNorm');
+const { analyzeFrame } = require('./lib/frameQuality');
 
 function loadState() {
   const res = readState(STORE_FILE);
@@ -156,8 +157,8 @@ function customFrames() {
 }
 
 // ---------- 后台生成 3D 形象 ----------
-const GEN_IDLE_PROMPT = 'Turn the person/pet/subject in this photo into an adorable chibi 3D mascot character, Pixar/Blender toy-figure style, big round head, large glossy expressive eyes, soft shading, keep the subject\'s key colors and recognizable features. Full body standing in a cute 3/4 front pose, soft studio lighting with subtle rim light, glossy clean render. Isolated on a FULLY TRANSPARENT background, PNG, subject centered, no ground, no baked shadow, high detail.';
-const GEN_WALK_PROMPT = 'Turn the person/pet/subject in this photo into an adorable chibi 3D mascot character, Pixar/Blender toy-figure style, big round head, large glossy eyes, keep the subject\'s key colors and recognizable features. Full body in a cute MID-WALK stride pose seen from a side 3/4 angle, one foot/paw lifted forward, playful happy expression, soft studio lighting, glossy clean render. Isolated on a FULLY TRANSPARENT background, PNG, subject centered, no ground, no baked shadow, high detail.';
+const GEN_IDLE_PROMPT = 'Turn the person/pet/subject in this photo into an adorable chibi 3D mascot character, Pixar/Blender toy-figure style, big round head, large glossy expressive eyes, soft shading, keep the subject\'s key colors and recognizable features. Full body standing in a cute 3/4 front pose, soft studio lighting with subtle rim light, glossy clean render. Anatomically correct, exactly four legs and one tail, natural feline pose. Isolated on a FULLY TRANSPARENT background, PNG, subject centered, no ground, no baked shadow, high detail.';
+const GEN_WALK_PROMPT = 'Turn the person/pet/subject in this photo into an adorable chibi 3D mascot character, Pixar/Blender toy-figure style, big round head, large glossy eyes, keep the subject\'s key colors and recognizable features. Full body in a cute MID-WALK stride pose seen from a side 3/4 angle, one foot/paw lifted forward, playful happy expression, soft studio lighting, glossy clean render. Anatomically correct, exactly four legs and one tail, natural feline pose. Isolated on a FULLY TRANSPARENT background, PNG, subject centered, no ground, no baked shadow, high detail.';
 
 // 骨骼部件提示词（同一角色，透明底，便于 Canvas 绑定）
 const GEN_RIG_PROMPTS = {
@@ -170,10 +171,10 @@ const GEN_RIG_PROMPTS = {
 
 // 动作帧提示词（通用主体，保持同一画风与透明底）
 const GEN_ACTION_PROMPTS = {
-  roll:  'Turn the subject in this photo into an adorable chibi 3D mascot, Pixar/Blender style, keep key colors and features. Pose: rolling on its back playfully, belly up, limbs up in the air, happy relaxed expression. Isolated on a FULLY TRANSPARENT background, PNG, centered, no ground, no baked shadow.',
-  groom: 'Turn the subject in this photo into an adorable chibi 3D mascot, Pixar/Blender style, keep key colors and features. Pose: sitting and grooming itself, cute focused expression. Isolated on a FULLY TRANSPARENT background, PNG, centered, no ground, no baked shadow.',
-  eat:   'Turn the subject in this photo into an adorable chibi 3D mascot, Pixar/Blender style, keep key colors and features. Pose: head lowered eating from a small round food bowl placed in front, happy eating expression. Isolated on a FULLY TRANSPARENT background, PNG, centered, no ground, no baked shadow.',
-  sleep: 'Turn the subject in this photo into an adorable chibi 3D mascot, Pixar/Blender style, keep key colors and features. Pose: lying down curled up sleeping, eyes closed peacefully, small white Zzz symbols floating above head. Isolated on a FULLY TRANSPARENT background, PNG, centered, no ground, no baked shadow.'
+  roll:  'Turn the subject in this photo into an adorable chibi 3D mascot, Pixar/Blender style, keep key colors and features. Pose: rolling on its back playfully, belly up, limbs up in the air, happy relaxed expression. Anatomically correct cat: four legs and one tail, no extra limbs. Isolated on a FULLY TRANSPARENT background, PNG, centered, no ground, no baked shadow.',
+  groom: 'Turn the subject in this photo into an adorable chibi 3D mascot, Pixar/Blender style, keep key colors and features. Pose: sitting and grooming itself, cute focused expression. Anatomically correct cat: four legs and one tail, no extra limbs. Isolated on a FULLY TRANSPARENT background, PNG, centered, no ground, no baked shadow.',
+  eat:   'Turn the subject in this photo into an adorable chibi 3D mascot, Pixar/Blender style, keep key colors and features. Pose: head lowered eating from a small round food bowl placed in front, happy eating expression. Anatomically correct cat: four legs and one tail, no extra limbs. Isolated on a FULLY TRANSPARENT background, PNG, centered, no ground, no baked shadow.',
+  sleep: 'Turn the subject in this photo into an adorable chibi 3D mascot, Pixar/Blender style, keep key colors and features. Pose: lying down curled up sleeping, eyes closed peacefully, small white Zzz symbols floating above head. Anatomically correct cat: four legs and one tail, no extra limbs. Isolated on a FULLY TRANSPARENT background, PNG, centered, no ground, no baked shadow.'
 };
 
 function genConfigPath() {
@@ -298,7 +299,15 @@ async function genAvatarFrame(srcPath, poseName, prompt) {
     if (!valid.ok) return { ok: false, error: valid.error };
     const outPath = path.join(app.getPath('userData'), `pet-gen-${poseName}-${Date.now()}${valid.ext}`);
     fs.writeFileSync(outPath, buf);
-    if (!poseName.startsWith('rig-')) normalizePoseFrame(outPath);
+    if (!poseName.startsWith('rig-')) {
+      const q = checkFrameQuality(outPath, poseName === 'idle' ? null : poseRefBox);
+      if (!q.ok) {
+        try { fs.rmSync(outPath, { force: true }); } catch (e) { /* ignore */ }
+        return { ok: false, error: 'quality_' + (q.reason || 'rejected') };
+      }
+      if (poseName === 'idle' && q.bbox) poseRefBox = { w: q.bbox.w, h: q.bbox.h };
+      normalizePoseFrame(outPath);
+    }
     return { ok: true, path: outPath };
   };
 
@@ -348,6 +357,18 @@ function genViaScript(cfg, srcPath, poseName, prompt) {
   });
 }
 
+// 生成帧质量闸门：空/过小/碎裂/与站立帧比例失衡 → 丢弃
+function checkFrameQuality(file, ref) {
+  try {
+    const img = nativeImage.createFromPath(file);
+    if (img.isEmpty()) return { ok: false, reason: 'unreadable' };
+    const { width, height } = img.getSize();
+    return analyzeFrame(img.getBitmap(), width, height, { ref: ref || null });
+  } catch (e) {
+    return { ok: false, reason: 'unreadable' };
+  }
+}
+
 // 姿势帧归一化：裁剪透明边、统一高度，减少序列播放时的忽大忽小
 function normalizePoseFrame(file, targetH = 340) {
   try {
@@ -368,6 +389,7 @@ function normalizePoseFrame(file, targetH = 340) {
 // ---------- 生成任务：隔离、并发、重试、取消、可查询 ----------
 let genJob = null;
 let genSeq = 0;
+let poseRefBox = null;
 
 const GEN_REST = [
   { key: 'walk',  prompt: GEN_WALK_PROMPT,          label: '行走' },
@@ -477,6 +499,7 @@ function startGenJob(sourcePath, sourceId, only) {
     isCurrent: () => genJob === runner.job
   });
 
+  poseRefBox = null;
   genRunner = runner;
   genJob = runner.job;
   persistGenJob();
