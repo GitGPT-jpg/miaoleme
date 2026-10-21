@@ -249,6 +249,13 @@ const RIG = {
   tail: { rx: 132, ry: 296, w: 150, h: 170, base: 0.32 }
 };
 
+let gaze = { x: 0, y: 0 };
+let gazeTarget = { x: 0, y: 0 };
+
+window.api.onCursor((p) => {
+  gazeTarget = GazeMath.gazeFromOffset(p.x, p.y, 600);
+});
+
 let nextBlinkAt = 0;
 let blinkUntil = 0;
 let nextEarAt = 0;
@@ -271,18 +278,21 @@ function pickHead(t) {
 function drawRig(t) {
   const W = rigCanvas.width, H = rigCanvas.height;
   rctx.clearRect(0, 0, W, H);
+  // 视线跟随（指数平滑，避免瞬移）
+  gaze.x = GazeMath.smooth(gaze.x, gazeTarget.x, 0.07);
+  gaze.y = GazeMath.smooth(gaze.y, gazeTarget.y, 0.07);
   const walking = mode === 'walk';
   const acting = mode === 'act';
   const bobHz = walking ? 5.5 : 1.3;
   const bobAmp = walking ? 7 : 3;
   const bob = Math.sin(t * bobHz) * bobAmp;
-  const breath = 1 + Math.sin(t * 1.15) * 0.018;
-  const sway = Math.sin(t * (walking ? 4.2 : 0.8)) * (walking ? 2.4 : 1.1);
+  const breath = 1 + (Math.sin(t * 1.15) * 0.014 + Math.sin(t * 0.43 + 1.2) * 0.008);
+  const sway = Math.sin(t * (walking ? 4.2 : 0.8)) * (walking ? 2.4 : 1.1) + gaze.x * 2;
 
   // 尾巴（底层，绕根部摆动）
   rctx.save();
   rctx.translate(RIG.tail.rx, RIG.tail.ry);
-  rctx.rotate(RIG.tail.base + Math.sin(t * (walking ? 4.8 : 1.05)) * (walking ? 0.3 : 0.17));
+  rctx.rotate(RIG.tail.base + Math.sin(t * (walking ? 4.8 : 1.05)) * (walking ? 0.3 : 0.17) + gaze.x * 0.12);
   rctx.drawImage(rig.tail, -32, -RIG.tail.h + 24, RIG.tail.w, RIG.tail.h);
   rctx.restore();
 
@@ -296,8 +306,13 @@ function drawRig(t) {
 
   // 头（颈部锚点：点头 + 倾斜 + 跟随呼吸）
   rctx.save();
-  rctx.translate(RIG.head.nx + sway * 0.5, RIG.head.ny + bob * 0.85);
-  rctx.rotate(Math.sin(t * (walking ? 3.6 : 0.75)) * (walking ? 0.055 : 0.028));
+  rctx.translate(
+    RIG.head.nx + sway * 0.5 + gaze.x * (walking ? 8 : 16),
+    RIG.head.ny + bob * 0.85 + gaze.y * (walking ? 5 : 10)
+  );
+  rctx.rotate(
+    Math.sin(t * (walking ? 3.6 : 0.75)) * (walking ? 0.055 : 0.028) + gaze.x * 0.08
+  );
   rctx.translate(0, Math.sin(t * (walking ? 5.2 : 1.4)) * (walking ? 5 : 2.4));
   if (acting) rctx.rotate(Math.sin(t * 2.4) * 0.02);
   rctx.drawImage(pickHead(t), -RIG.head.w / 2, -RIG.head.h * 0.82, RIG.head.w, RIG.head.h);

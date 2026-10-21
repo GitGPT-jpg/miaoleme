@@ -52,6 +52,7 @@ contextBridge.exposeInMainWorld('api', {
   onCustomImageChanged: (cb) => ipcRenderer.on('custom-image-changed', (e, url) => cb(url)),
   onFeedState: (cb) => ipcRenderer.on('feed-state', (e, s) => cb(s)),
   onRigRefresh: (cb) => ipcRenderer.on('rig-refresh', () => cb()),
+  onCursor: (cb) => ipcRenderer.on('cursor', (e, p) => cb(p)),
   onStateUpdated: (cb) => ipcRenderer.on('state-updated', (e, s) => cb(s)),
   onPomodoroTick: (cb) => ipcRenderer.on('pomodoro-tick', (e, p) => cb(p)),
   onGenStatus: (cb) => ipcRenderer.on('gen-status', (e, s) => cb(s))
