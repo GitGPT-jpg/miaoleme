@@ -908,8 +908,12 @@ function feedWater() {
   const r = feedDomain.feedWater(state, now);
   saveState();
   broadcastFeedState();
-  if (petWin) petWin.webContents.send('pet-say', { action: 'drink', text: '咕噜咕噜~ 猫咪喝饱啦，主人也喝水了吗？', mood: 'happy' });
-  notify('💧 喂水完成', '猫咪喝饱啦，主人也记得喝水~');
+  if (r.counted) {
+    if (petWin) petWin.webContents.send('pet-say', { action: 'drink', text: '咕噜咕噜~ 猫咪喝饱啦，主人也喝水了吗？', mood: 'happy' });
+    notify('💧 喂水完成', '猫咪喝饱啦，主人也记得喝水~');
+  } else {
+    petSay('刚喝过啦，猫咪还饱着呢~', 'normal', true);
+  }
   return r;
 }
 
@@ -1183,9 +1187,20 @@ handle('set-autolaunch', (e, enabled) => {
 
 // 亲密度 +1（桌宠被抚摸/互动）
 handle('add-intimacy', (e, n) => {
-  const delta = Math.min(10, Math.max(1, parseInt(n, 10) || 1));
-  state.stats.intimacy += delta;
-  saveState();
+  const now = Date.now();
+  const today = dateKey(now);
+  if (!state.stats.petDaily || state.stats.petDaily.date !== today) {
+    state.stats.petDaily = { date: today, count: 0 };
+  }
+  const last = state.stats.lastPetTs || 0;
+  const dailyLeft = Math.max(0, 20 - state.stats.petDaily.count);
+  const delta = Math.min(10, Math.max(1, parseInt(n, 10) || 1), dailyLeft);
+  if (now - last >= 30 * 1000 && delta > 0) {
+    state.stats.intimacy += delta;
+    state.stats.petDaily.count += delta;
+    state.stats.lastPetTs = now;
+    saveState();
+  }
   return state.stats;
 });
 

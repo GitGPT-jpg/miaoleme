@@ -119,8 +119,11 @@ test('喂饭决策：只标记当前餐次；无请求不加亲密度', () => {
   const p1 = feedPlan(lunchFeed, atNoon);
   assert.equal(p1.slot, 'lunch');
   assert.equal(p1.awardIntimacy, false, '无请求不加分');
-  assert.equal(feedPlan({ mealSlot: 'dinner', mealRequest: true }, atNoon).slot, 'dinner');
-  assert.equal(feedPlan({ mealSlot: 'dinner', mealRequest: true }, atNoon).awardIntimacy, true);
+  const today = dateKey(atNoon);
+  assert.equal(feedPlan({ mealSlot: 'dinner', mealRequest: true, mealRequestDate: today }, atNoon).slot, 'dinner');
+  assert.equal(feedPlan({ mealSlot: 'dinner', mealRequest: true, mealRequestDate: today }, atNoon).awardIntimacy, true);
+  // 缺日期的旧请求视为无效
+  assert.equal(feedPlan({ mealSlot: 'dinner', mealRequest: true, mealRequestDate: '' }, at(9)).markFed, false);
   // 上午 9 点：不在餐窗，也没有待喂请求 → 不标记任何餐次
   const p3 = feedPlan({ mealSlot: null, mealRequest: false }, at(9, 0));
   assert.equal(p3.slot, null);
