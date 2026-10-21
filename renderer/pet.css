@@ -95,6 +95,8 @@ html, body {
   width: 86px; height: 16px; margin-top: -4px;
   background: rgba(0,0,0,0.22);
 }
+/* 底部按钮条出现时，桌宠略上移，避免主体被条遮挡 */
+#pet.form-custom { margin-bottom: 34px; }
 #pet.form-custom.mood-alert .pet-photo-img { animation: float3dAlert 0.3s ease-in-out infinite; }
 @keyframes float3dAlert {
   0%,100% { transform: translateX(-4px) rotateY(-6deg); }
@@ -205,22 +207,27 @@ html, body {
 /* ---------- 悬浮快捷菜单 ---------- */
 #menu {
   position: absolute;
-  top: 158px;                 /* 抬到桌宠图像上方，不遮挡猫咪 */
+  bottom: 4px;                /* 固定在窗口最下方 */
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   gap: 6px;
-  z-index: 50;                /* 确保浮在桌宠图像之上 */
+  padding: 5px 8px;
+  border-radius: 22px;
+  background: rgba(255,255,255,0.88);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+  z-index: 70;                /* 盖在猫咪之上：猫不再遮挡按钮 */
   -webkit-app-region: no-drag;
 }
 #menu button {
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   border: none;
   border-radius: 50%;
-  background: rgba(255,255,255,0.92);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
-  font-size: 16px;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.18);
+  font-size: 15px;
   cursor: pointer;
   transition: transform .15s;
 }
