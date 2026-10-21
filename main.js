@@ -34,6 +34,7 @@ const STORE_FILE = path.join(app.getPath('userData'), 'zerobreak-store.json');
 const { normalizeState, readState } = require('./lib/store');
 const { mealSlotAt, mealEligible, inDndWindow, meetingNotice, ddlNotice, clearMarks, dateKey, feedPlan } = require('./lib/schedule');
 const feedDomain = require('./lib/feed');
+const { sniffImageType, planUploadCopies, sniffImageTypeOfFile } = require('./lib/upload');
 const { classifyGenError, validateImageBuffer, deriveJobStatus, extractImageBase64 } = require('./lib/gen');
 const { createGenJob } = require('./lib/genjob');
 const { clampToArea, isInsideAnyDisplay } = require('./lib/geometry');
@@ -1079,8 +1080,8 @@ handle('get-rig-parts', () => {
   const customCore = rigSourceOk && coreRigPresent(dir, (f) => fs.existsSync(f));
   const paths = customCore
     ? ['pet-rig-body.png', 'pet-rig-head.png', 'pet-rig-tail.png'].map((f) => path.join(dir, f))
-    : (!state.customImage && [RIG_PARTS_BODY, RIG_PARTS_HEAD, RIG_PARTS_TAIL].every((f) => fs.existsSync(f))
-      ? [RIG_PARTS_BODY, RIG_PARTS_HEAD, RIG_PARTS_TAIL] : null);
+    : (!state.customImage && [RIG_PARTS.body, RIG_PARTS.head, RIG_PARTS.tail].every((f) => fs.existsSync(f))
+      ? [RIG_PARTS.body, RIG_PARTS.head, RIG_PARTS.tail] : null);
   if (!paths) return { usable: false, parts: {} };
   const parts = {};
   ['body', 'head', 'tail'].forEach((k, i) => {
@@ -1106,37 +1107,31 @@ handle('upload-custom-image', async () => {
     properties: ['openFile', 'multiSelections'],
     filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }]
   });
-  if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false };
+  return processUploadFiles((res.filePaths || []).slice(0, 6));
+});
+
+// 上传处理（对话框与自测钩子共用同一实现）
+function processUploadFiles(files) {
+  if (!files || !files.length) return { ok: false, error: 'no_files' };
   try {
-    const src = res.filePaths[0];
-    const ext = path.extname(src).toLowerCase() || '.png';
-    try {
-      const st = fs.statSync(src);
+    for (const f of files) {
+      const st = fs.statSync(f);
       if (st.size > 20 * 1024 * 1024) return { ok: false, error: 'image_too_large' };
-      const head = Buffer.alloc(12);
-      const fd = fs.openSync(src, 'r');
-      try { fs.readSync(fd, head, 0, 12, 0); } finally { fs.closeSync(fd); }
-      const isPng = head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47;
-      const isJpg = head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
-      const isGif = head.slice(0, 3).toString('ascii') === 'GIF';
-      const isWebp = head.slice(0, 4).toString('ascii') === 'RIFF' && head.slice(8, 12).toString('ascii') === 'WEBP';
-      if (!isPng && !isJpg && !isGif && !isWebp) return { ok: false, error: 'invalid_image' };
-    } catch (e) {
-      return { ok: false, error: 'invalid_image' };
+      if (!sniffImageTypeOfFile(f)) return { ok: false, error: 'invalid_image' };
     }
     const jobId = `upload-${Date.now()}-${++genSeq}`;
-    // 每次上传独立输入快照，避免被下一次上传覆盖
-    const dest = path.join(app.getPath('userData'), `pet-custom-${jobId}${ext}`);
-    fs.copyFileSync(src, dest);
-    cancelGenJob();                 // 旧任务立即失效，不再回写
-    // 清掉上一只猫的骨骼部件，避免新旧形象混用
+    const plan = planUploadCopies(files, app.getPath('userData'), jobId);
+    for (const c of plan) fs.copyFileSync(c.src, c.dest);
+    const refs = plan.map((c) => c.dest);
+    const dest = refs[0];
+    cancelGenJob();
     for (const p of RIG_PLAN) {
       try { fs.rmSync(path.join(app.getPath('userData'), p.file), { force: true }); } catch (e) { /* ignore */ }
     }
     state.customImage = dest;
     state.customImages = refs;
     state.rigSourceImage = '';
-    state.customGenIdle = null;     // 清除上一次生成的 3D 帧，待重新生成
+    state.customGenIdle = null;
     state.customGenWalk = null;
     state.customGenActions = null;
     state.form = 'custom';
@@ -1145,13 +1140,23 @@ handle('upload-custom-image', async () => {
     const url = customImageDataUrl();
     if (petWin) { petWin.webContents.send('form-changed', 'custom'); petWin.webContents.send('custom-image-changed', url); }
     if (panelWin) panelWin.webContents.send('state-updated', publicState());
-    // 后台异步生成 3D 形象（不阻塞上传返回；先用原图占位，生成完自动替换）
     startGenJob(dest, jobId, null, refs);
     return { ok: true, dataUrl: url, generating: genAvailable(), jobId };
   } catch (err) {
     return { ok: false, error: String(err) };
   }
-});
+}
+
+// 开发自测钩子：AUTO_UPLOAD_PATH=a.jpg,b.jpg 启动即走真实上传+生成路径
+function maybeAutoUpload() {
+  const raw = process.env.AUTO_UPLOAD_PATH;
+  if (!raw) return;
+  const files = raw.split(',').map((p) => p.trim()).filter(Boolean).slice(0, 6);
+  setTimeout(() => {
+    console.log('[auto-upload]', files.length, 'files');
+    console.log('[auto-upload] result', JSON.stringify(processUploadFiles(files)));
+  }, 2500);
+}
 
 // 生成任务查询 / 取消 / 重试失败项
 handle('get-gen-job', () => jobSnapshot(genJob) || state.genJob);
@@ -1496,6 +1501,7 @@ app.whenReady().then(() => {
   restorePomodoroOnStartup();
 
   if (process.env.DEMO_AUTOSTART === '1') setTimeout(startDemoSequence, 3000);
+  maybeAutoUpload();
 
   // 光标位置广播：让桌宠的视线/身体跟随用户（10Hz，轻量）
   cursorTimer = setInterval(() => {
