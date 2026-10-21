@@ -19,6 +19,7 @@
   "build": {
     "appId": "com.zerobreak.desktoppet",
     "productName": "喵了么",
+    "electronLanguages": ["zh-CN", "en-US"],
     "files": [
       "main.js",
       "launch.js",
