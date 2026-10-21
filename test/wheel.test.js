@@ -39,3 +39,16 @@ test('指针位置与结果不一致的回归：牛肉面场景', () => {
   assert.equal(plan.landed, 1, '落点必须是牛肉面');
   assert.equal(landedIndex(plan.rotation % 360, 8), 1, '归一化后仍需一致');
 });
+
+test('落点与标签位置一致：旋转后离指针最近的标签即结果', () => {
+  for (let count = 3; count <= 12; count++) {
+    const seg = 360 / count;
+    const labels = Array.from({ length: count }, (_, i) => i * seg + seg / 2);
+    for (let idx = 0; idx < count; idx++) {
+      const { rotation, landed } = spinPlan(count, idx);
+      const shown = labels.map((a) => (((a + rotation) % 360) + 360) % 360);
+      const nearest = shown.indexOf(Math.min(...shown));
+      assert.equal(nearest, landed, `count=${count} idx=${idx}`);
+    }
+  }
+});

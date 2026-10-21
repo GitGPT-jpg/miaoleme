@@ -99,7 +99,7 @@ npm run pack        # 免安装目录版
 
 ## 🛠 技术栈
 
-Electron + 原生 JS/CSS（无框架依赖），数据本地 JSON 存储（原子写入），安全基线：contextIsolation + sandbox + CSP + IPC 输入校验。
+Electron 45（维护中版本）+ 原生 JS/CSS（无框架依赖），数据本地 JSON 存储（原子写入），安全基线：contextIsolation + sandbox + CSP + IPC 输入校验。
 
 ## 🧪 测试与验证
 
