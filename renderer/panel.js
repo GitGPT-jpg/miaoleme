@@ -37,7 +37,8 @@ function loadCustomPreview() {
 }
 const UPLOAD_ERRORS = {
   image_too_large: '图片超过 20MB，请压缩后再试',
-  invalid_image: '这不是有效的图片文件（支持 PNG/JPG/GIF/WebP）',
+  invalid_image: '这不是有效的图片文件（支持 PNG/JPG/GIF/WebP/HEIC）',
+  heic_unsupported: '这张 HEIC 照片本机解码失败，试试用「照片」App 导出为 JPG 再上传',
 };
 document.getElementById('upload-img').addEventListener('click', async () => {
   const res = await window.api.uploadCustomImage();

@@ -26,3 +26,11 @@ test('上传规划：最多 6 张，独立快照命名，扩展名正确', () =>
 test('回归：sniffImageTypeOfFile 必须被导出（上传入口依赖它）', () => {
   assert.equal(typeof sniffImageTypeOfFile, 'function');
 });
+
+test('HEIC 文件头嗅探：ftyp+heic/mif1 品牌识别', () => {
+  const mk = (brand) => { const b = Buffer.alloc(12); b.writeUInt32BE(12, 0); b.write('ftyp', 4, 'ascii'); b.write(brand, 8, 'ascii'); return b; };
+  assert.equal(sniffImageType(mk('heic')), 'heic');
+  assert.equal(sniffImageType(mk('mif1')), 'heic');
+  assert.equal(sniffImageType(mk('msf1')), 'heic');
+  assert.equal(sniffImageType(mk('mp41')), null, 'mp4 不是图片');
+});
