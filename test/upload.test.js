@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { sniffImageType, planUploadCopies } = require('../lib/upload');
+const { sniffImageType, sniffImageTypeOfFile, planUploadCopies } = require('../lib/upload');
 
 test('图片类型嗅探：png/jpg/gif/webp/未知', () => {
   assert.equal(sniffImageType(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0, 0, 0, 0, 0])), 'png');
@@ -21,4 +21,8 @@ test('上传规划：最多 6 张，独立快照命名，扩展名正确', () =>
   assert.equal(plan[2].dest, '/data/pet-ref-2-job1.heic');
   const many = planUploadCopies(Array.from({ length: 9 }, (_, i) => `f${i}.jpg`), '/data', 'j2');
   assert.equal(many.length, 6, '最多 6 张');
+});
+
+test('回归：sniffImageTypeOfFile 必须被导出（上传入口依赖它）', () => {
+  assert.equal(typeof sniffImageTypeOfFile, 'function');
 });
