@@ -1307,7 +1307,9 @@ handle('test-gen-config', async () => {
   });
 });
 handle('cancel-gen', () => { cancelGenJob(); return jobSnapshot(genJob); });
-handle('retry-gen', () => {
+// 重试缺失帧（IPC 与启动恢复共用）：骨骼部件不在 GEN_REST 的 only 判定里，
+// 但 startGenJob(null) 会重跑全部缺失项（含 rig），此处保持与面板语义一致。
+function retryMissingFrames() {
   const src = state.customImage;
   if (!src || !fs.existsSync(src)) return { ok: false, error: 'no_source' };
   const only = [];
@@ -1316,11 +1318,17 @@ handle('retry-gen', () => {
   GEN_REST.forEach((t) => {
     const p = state.customGenActions && state.customGenActions[t.key];
     if (!(p && fs.existsSync(p))) only.push(t.key);
+    // 骨骼部件：对应文件缺失时也补
+    if (t.rig) {
+      const rf = rigFilePath(app.getPath('userData'), t.key);
+      if (!fs.existsSync(rf)) only.push(t.key);
+    }
   });
   if (!only.length) return { ok: true, nothingToDo: true };
   const job = startGenJob(src, `retry-${Date.now()}`, only);
   return { ok: true, job: jobSnapshot(job) };
-});
+}
+handle('retry-gen', () => retryMissingFrames());
 
 handle('set-water', (e, cfg) => {
   const c = cfg || {};
@@ -1579,6 +1587,11 @@ app.whenReady().then(() => {
 
   if (process.env.DEMO_AUTOSTART === '1') setTimeout(startDemoSequence, 3000);
   maybeAutoUpload();
+  // 自测钩子：RETRY_GEN=1 启动即对缺失帧重试（恢复被中断的生成）
+  if (process.env.RETRY_GEN === '1') setTimeout(() => {
+    const r = retryMissingFrames();
+    console.log('[retry-gen]', JSON.stringify(r).slice(0, 200));
+  }, 3000);
 
   // 光标位置广播：让桌宠的视线/身体跟随用户（10Hz，轻量）
   cursorTimer = setInterval(() => {
