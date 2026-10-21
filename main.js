@@ -33,6 +33,7 @@ const STORE_FILE = path.join(app.getPath('userData'), 'zerobreak-store.json');
 
 const { normalizeState, readState } = require('./lib/store');
 const { mealSlotAt, mealEligible, inDndWindow, meetingNotice, ddlNotice, clearMarks, dateKey, feedPlan } = require('./lib/schedule');
+const feedDomain = require('./lib/feed');
 const { classifyGenError, validateImageBuffer, deriveJobStatus, extractImageBase64 } = require('./lib/gen');
 const { createGenJob } = require('./lib/genjob');
 const { clampToArea, isInsideAnyDisplay } = require('./lib/geometry');
@@ -674,6 +675,7 @@ function refreshTrayMenu() {
       }))
     },
     { label: '🍅 开始番茄钟', click: () => startPomodoro() },
+    { label: '🎬 一键演示（路演）', click: () => startDemoSequence() },
     { label: '💧 喂水', click: () => feedWater() },
     { label: '🍚 喂猫粮', click: () => feedFood() },
     { label: '🐾 来个动作',
@@ -1430,6 +1432,41 @@ on('trigger-action', (e, name) => {
 });
 on('open-panel', openPanel);
 
+// ---------- 一键演示（路演用） ----------
+let demoRunning = false;
+let demoTimers = [];
+
+function clearDemoTimers() {
+  demoTimers.forEach((t) => clearTimeout(t));
+  demoTimers = [];
+  demoRunning = false;
+}
+
+function startDemoSequence() {
+  if (demoRunning) return;
+  demoRunning = true;
+  const at = (ms, fn) => demoTimers.push(setTimeout(() => {
+    try { fn(); } catch (e) { console.error('[demo]', e && e.message); }
+  }, ms));
+  const act = (name) => { if (petWin) petWin.webContents.send('pet-say', { action: name }); };
+  const tab = (t) => { if (panelWin) panelWin.webContents.send('demo-tab', t); };
+
+  openPanel();
+  at(300, () => petSay('大家好，我是喵了么，你们的桌面小助手～', 'happy', true));
+  at(2500, () => act('stretch'));
+  at(6000, () => act('roll'));
+  at(10500, () => { tab('meal'); petSay('午饭吃什么？交给我～', 'happy', true); });
+  at(12000, () => { if (panelWin) panelWin.webContents.send('demo-spin'); });
+  at(17500, () => feedWater());
+  at(19500, () => { feedFood(); });
+  at(22500, () => { tab('focus'); petSay('专注时间，我陪你～', 'happy', true); });
+  at(23500, () => startPomodoro());
+  at(27000, () => { tab('game'); petSay('演示结束，点我玩小游戏吧！', 'happy', true); });
+  at(32000, () => { clearDemoTimers(); });
+}
+
+handle('demo-start', () => { startDemoSequence(); return { ok: true }; });
+
 // ---------- 生命周期 ----------
 let reminderTimer = null;
 let cursorTimer = null;
@@ -1443,6 +1480,8 @@ app.whenReady().then(() => {
   checkReminders();
   reminderTimer = setInterval(checkReminders, 20 * 1000); // 每 20 秒检查一次
   restorePomodoroOnStartup();
+
+  if (process.env.DEMO_AUTOSTART === '1') setTimeout(startDemoSequence, 3000);
 
   // 光标位置广播：让桌宠的视线/身体跟随用户（10Hz，轻量）
   cursorTimer = setInterval(() => {
@@ -1481,6 +1520,7 @@ app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   if (reminderTimer) clearInterval(reminderTimer);
   if (cursorTimer) clearInterval(cursorTimer);
+  clearDemoTimers();
   if (pomo.timer) clearInterval(pomo.timer);   // 只停计时器，保留 state.pomo 供下次续跑
   for (const child of genChildren) { try { child.kill('SIGKILL'); } catch (e) { /* already gone */ } }
   genChildren.clear();

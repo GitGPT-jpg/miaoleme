@@ -120,6 +120,14 @@ function setGenStatus(s) {
   }
 }
 window.api.onGenStatus((s) => setGenStatus(s));
+window.api.onDemoTab((t) => {
+  const tab = document.querySelector(`.tab[data-tab="${t}"]`);
+  if (tab) tab.click();
+});
+window.api.onDemoSpin(() => {
+  const btn = document.getElementById('spin-btn');
+  if (btn && !btn.disabled) btn.click();
+});
 
 document.getElementById('gen-cancel').addEventListener('click', async () => {
   await window.api.cancelGen();
@@ -464,6 +472,7 @@ function renderDnd(dnd) {
 document.getElementById('autolaunch').addEventListener('change', async (e) => {
   await window.api.setAutoLaunch(e.target.checked);
 });
+document.getElementById('demo-start').addEventListener('click', () => window.api.startDemo());
 document.getElementById('quiet-mode').addEventListener('change', async (e) => {
   await window.api.setQuiet(e.target.checked);
 });
