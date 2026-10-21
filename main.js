@@ -1,6 +1,7 @@
 const { app, BrowserWindow, Tray, Menu, ipcMain, Notification, screen, nativeImage, globalShortcut, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { spawn } = require('child_process');
 const genChildren = new Set();
 
@@ -35,6 +36,7 @@ const { normalizeState, readState } = require('./lib/store');
 const { mealSlotAt, mealEligible, inDndWindow, meetingNotice, ddlNotice, clearMarks, dateKey, feedPlan } = require('./lib/schedule');
 const feedDomain = require('./lib/feed');
 const { sniffImageType, planUploadCopies, sniffImageTypeOfFile } = require('./lib/upload');
+const { UPLOAD_MAX_EDGE, shouldNormalize } = require('./lib/normalize');
 const { classifyGenError, validateImageBuffer, deriveJobStatus, extractImageBase64 } = require('./lib/gen');
 const { createGenJob } = require('./lib/genjob');
 const { clampToArea, isInsideAnyDisplay } = require('./lib/geometry');
@@ -115,7 +117,36 @@ function customImagePath() {
 }
 
 function customImageDataUrl() {
-  return fileToDataUrl(customImagePath());
+  const p = customImagePath();
+  if (!p) return null;
+  // 预览大图（≥1.5MB 的原图）先缩到 480 宽，避免把几 MB base64 推给渲染层
+  try {
+    const st = fs.statSync(p);
+    if (st.size > 1536 * 1024) {
+      const img = nativeImage.createFromPath(p);
+      if (!img.isEmpty()) {
+        const { width } = img.getSize();
+        if (width > 480) return previewCache(p, img);
+      }
+    }
+  } catch (e) { /* 走原样 */ }
+  return fileToDataUrl(p);
+}
+
+// 预览缩略缓存（与 fileToDataUrl 同样的 mtime|size 键）
+const previewMap = new Map();
+function previewCache(p, img) {
+  try {
+    const st = fs.statSync(p);
+    const key = `${p}|${st.mtimeMs}|${st.size}`;
+    if (previewMap.has(key)) return previewMap.get(key);
+    if (previewMap.size > 40) previewMap.clear();
+    const url = img.resize({ width: 480 }).toDataURL();
+    previewMap.set(key, url);
+    return url;
+  } catch (e) {
+    return fileToDataUrl(p);
+  }
 }
 
 // 返回帧集合：{ idle, idleAlt, walk, walkAlt, happy, actions:{..., sleepAlt} }
@@ -1105,13 +1136,14 @@ handle('upload-custom-image', async () => {
   const res = await dialog.showOpenDialog({
     title: '选择桌宠图片',
     properties: ['openFile', 'multiSelections'],
-    filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }]
+    filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'heic', 'heif'] }]
   });
   return processUploadFiles((res.filePaths || []).slice(0, 6));
 });
 
 // 上传处理（对话框与自测钩子共用同一实现）
-function processUploadFiles(files) {
+// 1) 校验魔数（含 HEIC）与体积 → 2) HEIC/超大图规整为 ≤1536 JPEG → 3) 快照落盘 → 4) 启动生成
+async function processUploadFiles(files) {
   if (!files || !files.length) return { ok: false, error: 'no_files' };
   try {
     for (const f of files) {
@@ -1120,13 +1152,27 @@ function processUploadFiles(files) {
       if (!sniffImageTypeOfFile(f)) return { ok: false, error: 'invalid_image' };
     }
     const jobId = `upload-${Date.now()}-${++genSeq}`;
-    const plan = planUploadCopies(files, app.getPath('userData'), jobId);
-    for (const c of plan) fs.copyFileSync(c.src, c.dest);
+    const dir = app.getPath('userData');
+    const plan = planUploadCopies(files, dir, jobId);
+    for (const c of plan) {
+      if (/\.heic?$/i.test(c.dest)) {
+        // HEIC：系统缩略图通道解码（nativeImage 直接解 HEIC 为空），顺带落定 EXIF 方向
+        const conv = await convertViaThumbnail(c.src);
+        if (!conv) return { ok: false, error: 'heic_unsupported' };
+        c.src = conv;
+        c.dest = c.dest.replace(/\.heic?$/i, '.jpg');
+      } else if (fs.statSync(c.src).size > 8 * 1024 * 1024) {
+        // 大图：缩到 1536 长边（服务实测可收原图，但小图显著提速省内存；失败则原样直通）
+        const conv = await resizeViaThumbnail(c.src, 1536);
+        if (conv) c.src = conv;
+      }
+      fs.copyFileSync(c.src, c.dest);
+    }
     const refs = plan.map((c) => c.dest);
     const dest = refs[0];
     cancelGenJob();
     for (const p of RIG_PLAN) {
-      try { fs.rmSync(path.join(app.getPath('userData'), p.file), { force: true }); } catch (e) { /* ignore */ }
+      try { fs.rmSync(path.join(dir, p.file), { force: true }); } catch (e) { /* ignore */ }
     }
     state.customImage = dest;
     state.customImages = refs;
@@ -1147,6 +1193,35 @@ function processUploadFiles(files) {
   }
 }
 
+// HEIC/大图规整：系统缩略图服务解码（返回临时 JPEG 路径；失败返回 null）
+// macOS 缩略图通道对部分 HEIC 在请求宽度 ≥1200 时返回 1024×1024 空白占位图（45721 字节、
+// 跨文件字节级相同），且返回尺寸与请求不符；用安全宽度 800 请求，再放大到目标长边。
+const THUMB_SAFE_WIDTH = 800;
+async function convertViaThumbnail(src) {
+  return resizeViaThumbnail(src, UPLOAD_MAX_EDGE);
+}
+async function resizeViaThumbnail(src, maxEdge) {
+  try {
+    const req = { width: THUMB_SAFE_WIDTH, height: THUMB_SAFE_WIDTH };
+    let img = await nativeImage.createThumbnailFromPath(src, req);
+    if (img.isEmpty()) return null;
+    const size = img.getSize();
+    // 占位图特征：正方形 1024 且与请求宽高不符 → 系统没真解出图，按失败处理
+    if (size.width === 1024 && size.height === 1024 && (req.width !== 1024 || req.height !== 1024)) {
+      return null;
+    }
+    if (size.width < maxEdge && size.height < maxEdge) {
+      img = img.resize({ width: size.width >= size.height ? maxEdge : undefined, height: size.height > size.width ? maxEdge : undefined, quality: 'best' });
+      if (img.isEmpty()) return null;
+    }
+    const tmp = path.join(os.tmpdir(), `mlm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`);
+    fs.writeFileSync(tmp, img.toJPEG(88));
+    return tmp;
+  } catch (e) {
+    return null;
+  }
+}
+
 // 开发自测钩子：AUTO_UPLOAD_PATH=a.jpg,b.jpg 启动即走真实上传+生成路径
 function maybeAutoUpload() {
   const raw = process.env.AUTO_UPLOAD_PATH;
@@ -1154,7 +1229,9 @@ function maybeAutoUpload() {
   const files = raw.split(',').map((p) => p.trim()).filter(Boolean).slice(0, 6);
   setTimeout(() => {
     console.log('[auto-upload]', files.length, 'files');
-    console.log('[auto-upload] result', JSON.stringify(processUploadFiles(files)));
+    Promise.resolve(processUploadFiles(files)).then((r) => {
+      console.log('[auto-upload] result', JSON.stringify(r));
+    }, (e) => console.log('[auto-upload] error', e && e.message));
   }, 2500);
 }
 
