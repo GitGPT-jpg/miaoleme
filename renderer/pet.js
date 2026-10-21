@@ -249,6 +249,9 @@ const RIG = {
 };
 
 let gaze = { x: 0, y: 0 };
+let lastRigT = 0;
+let tailSpring = { x: 0.32, v: 0 };
+let saccade = { until: 0, nextAt: 0, dx: 0, dy: 0 };
 let gazeTarget = { x: 0, y: 0 };
 
 window.api.onCursor((p) => {
@@ -274,12 +277,36 @@ function pickHead(t) {
   return rig.head;
 }
 
+function drawHeadWarped(img, cx, cy, w, h, rot, offsets) {
+  const bands = offsets.length;
+  const srcH = img.height / bands;
+  const dstH = h / bands;
+  rctx.save();
+  rctx.translate(cx, cy);
+  rctx.rotate(rot);
+  for (let i = 0; i < bands; i++) {
+    const o = offsets[i];
+    const sy = i * srcH;
+    const sh = Math.min(srcH + 2, img.height - sy);
+    rctx.save();
+    rctx.translate(o.x, o.y);
+    rctx.drawImage(img, 0, sy, img.width, sh, -w / 2, -h + i * dstH, w, dstH + 2);
+    rctx.restore();
+  }
+  rctx.restore();
+}
+
 function drawRig(t) {
   const W = rigCanvas.width, H = rigCanvas.height;
   rctx.clearRect(0, 0, W, H);
   // 视线跟随（指数平滑，避免瞬移）
   gaze.x = GazeMath.smooth(gaze.x, gazeTarget.x, 0.07);
   gaze.y = GazeMath.smooth(gaze.y, gazeTarget.y, 0.07);
+  const dt = lastRigT ? Math.min(0.05, Math.max(0.008, t - lastRigT)) : 0.016;
+  lastRigT = t;
+  // 瞳孔微动（saccade）：随机小幅跳跃
+  if (t > saccade.nextAt) saccade = WarpMath.nextSaccade(t);
+  const sacc = t < saccade.until ? saccade : { dx: 0, dy: 0 };
   const walking = mode === 'walk';
   const acting = mode === 'act';
   const bobHz = walking ? 5.5 : 1.3;
@@ -289,9 +316,13 @@ function drawRig(t) {
   const sway = Math.sin(t * (walking ? 4.2 : 0.8)) * (walking ? 2.4 : 1.1) + gaze.x * 2;
 
   // 尾巴（底层，绕根部摆动）
+  const tailTarget = RIG.tail.base
+    + Math.sin(t * (walking ? 4.8 : 1.05)) * (walking ? 0.3 : 0.17)
+    + gaze.x * 0.12;
+  tailSpring = WarpMath.stepSpring(tailSpring, tailTarget, dt, walking ? 180 : 90, 14);
   rctx.save();
   rctx.translate(RIG.tail.rx, RIG.tail.ry);
-  rctx.rotate(RIG.tail.base + Math.sin(t * (walking ? 4.8 : 1.05)) * (walking ? 0.3 : 0.17) + gaze.x * 0.12);
+  rctx.rotate(tailSpring.x);
   rctx.drawImage(rig.tail, -32, -RIG.tail.h + 24, RIG.tail.w, RIG.tail.h);
   rctx.restore();
 
