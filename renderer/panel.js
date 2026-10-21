@@ -35,8 +35,17 @@ function loadCustomPreview() {
     else customPreview.classList.remove('show');
   });
 }
+const UPLOAD_ERRORS = {
+  image_too_large: '图片超过 20MB，请压缩后再试',
+  invalid_image: '这不是有效的图片文件（支持 PNG/JPG/GIF/WebP）',
+};
 document.getElementById('upload-img').addEventListener('click', async () => {
   const res = await window.api.uploadCustomImage();
+  if (res && !res.ok && res.error) {
+    genStatusEl.className = 'gen-status err';
+    genStatusEl.textContent = '⚠️ ' + (UPLOAD_ERRORS[res.error] || '上传失败：' + res.error);
+    return;
+  }
   if (res && res.ok) {
     if (res.dataUrl) { customPreview.src = res.dataUrl; customPreview.classList.add('show'); }
     renderForm('custom');
@@ -52,6 +61,13 @@ const genProgFill = document.getElementById('gen-progress-fill');
 const genActionsEl = document.getElementById('gen-actions');
 
 const GEN_STATE_MAP = { running: 'generating', completed: 'completed', partial: 'partial', failed: 'failed', cancelled: 'cancelled', unavailable: 'unavailable' };
+const genCancelBtn = document.getElementById('gen-cancel');
+const genRetryBtn = document.getElementById('gen-retry');
+function showGenActions(cancel, retry) {
+  genActionsEl.style.display = (cancel || retry) ? 'flex' : 'none';
+  genCancelBtn.style.display = cancel ? '' : 'none';
+  genRetryBtn.style.display = retry ? '' : 'none';
+}
 
 function setGenStatus(s) {
   genStatusEl.className = 'gen-status';
@@ -70,7 +86,7 @@ function setGenStatus(s) {
       : '正在准备生成…';
     genProgEl.classList.add('show');
     genProgFill.style.width = total ? Math.round(done / total * 100) + '%' : '4%';
-    genActionsEl.style.display = 'flex';
+    showGenActions(true, false);
   } else if (st === 'completed') {
     genStatusEl.classList.add('ok');
     genStatusEl.textContent = `✅ 全部 ${total || ok} 个姿势生成完成并应用`;
@@ -82,19 +98,19 @@ function setGenStatus(s) {
     genStatusEl.textContent = `⚠️ 已生成 ${ok}/${total}，${bad} 项失败，可重试失败项`;
     genProgEl.classList.add('show');
     genProgFill.style.width = Math.round(ok / (total || 1) * 100) + '%';
-    genActionsEl.style.display = 'flex';
+    showGenActions(false, true);
     loadCustomPreview();
   } else if (st === 'cancelled') {
     genStatusEl.classList.add('err');
     genStatusEl.textContent = `⏹ 已取消生成（已完成 ${ok}/${total}）`;
     genProgEl.classList.remove('show');
-    genActionsEl.style.display = 'flex';
+    showGenActions(false, true);
     loadCustomPreview();
   } else if (st === 'failed') {
     genStatusEl.classList.add('err');
     genStatusEl.textContent = '❌ 生成失败，已保留原图/最近成功形象';
     genProgEl.classList.remove('show');
-    genActionsEl.style.display = 'flex';
+    showGenActions(false, true);
   } else if (st === 'unavailable') {
     genStatusEl.classList.add('err');
     genStatusEl.textContent = '⚠️ 未配置生成服务，当前使用原图';
