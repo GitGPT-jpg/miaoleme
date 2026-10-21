@@ -207,7 +207,7 @@ function loadRig() {
     });
     Promise.all([load(res.parts.body), load(res.parts.head), load(res.parts.tail)]).then(([b, h, t]) => {
       if (!b || !h || !t) { disableRig(); return; }
-      rig = { body: b, head: h, tail: t };
+      rig = { body: b, head: h, tail: t, blink: null, ears: null };
       enableRig();
     });
   });
@@ -249,6 +249,25 @@ const RIG = {
   tail: { rx: 132, ry: 296, w: 150, h: 170, base: 0.32 }
 };
 
+let nextBlinkAt = 0;
+let blinkUntil = 0;
+let nextEarAt = 0;
+let earUntil = 0;
+
+function pickHead(t) {
+  if (t > nextBlinkAt) {
+    blinkUntil = t + 0.14;
+    nextBlinkAt = t + 3 + Math.random() * 3;
+  }
+  if (t > nextEarAt) {
+    earUntil = t + 0.8;
+    nextEarAt = t + 8 + Math.random() * 7;
+  }
+  if (rig.blink && t < blinkUntil) return rig.blink;
+  if (rig.ears && t < earUntil) return rig.ears;
+  return rig.head;
+}
+
 function drawRig(t) {
   const W = rigCanvas.width, H = rigCanvas.height;
   rctx.clearRect(0, 0, W, H);
@@ -281,7 +300,7 @@ function drawRig(t) {
   rctx.rotate(Math.sin(t * (walking ? 3.6 : 0.75)) * (walking ? 0.055 : 0.028));
   rctx.translate(0, Math.sin(t * (walking ? 5.2 : 1.4)) * (walking ? 5 : 2.4));
   if (acting) rctx.rotate(Math.sin(t * 2.4) * 0.02);
-  rctx.drawImage(rig.head, -RIG.head.w / 2, -RIG.head.h * 0.82, RIG.head.w, RIG.head.h);
+  rctx.drawImage(pickHead(t), -RIG.head.w / 2, -RIG.head.h * 0.82, RIG.head.w, RIG.head.h);
   rctx.restore();
 }
 
@@ -519,6 +538,7 @@ window.api.onCustomImageChanged(() => {
   loadCustomImage();   // 上传形象后 getRigParts 会返回 unusable，保持帧动画
 });
 window.api.onFeedState((fs) => renderFeedBadge(fs));
+window.api.onRigRefresh(() => loadRig());
 
 // 初始化
 window.api.getState().then((s) => {

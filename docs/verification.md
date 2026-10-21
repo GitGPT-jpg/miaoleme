@@ -58,7 +58,7 @@
 | 验证项 | 方式 | 结果 |
 |---|---|---|
 | 依赖安装 | `npm ci` | PASS |
-| 单元测试（62 项） | `npm test`（node:test） | PASS |
+| 单元测试（65 项） | `npm test`（node:test） | PASS |
 | 数据损坏/空/错误类型/旧数据迁移 | `test/store.test.js` | PASS |
 | 餐次去重、DND 跨午夜、会议/DDL 漏窗与文案 | `test/schedule.test.js` | PASS |
 | 生成错误分类、图片校验、并发池、状态推导 | `test/gen.test.js` | PASS |
@@ -101,8 +101,9 @@
 
 ## 四点四、2D 骨骼动画（v0.4）
 
-- 部件：内置猫 rig-body/head/tail、用户形象 pet-rig-body/head/tail（AI 生成，透明底）
-- 渲染：Canvas 2D 层级变换（尾→身→头），持续运行 requestAnimationFrame；参数：呼吸 1.15Hz、摆尾 1.05Hz、头点 1.4Hz；走路时提高频率与幅度
+- 部件：内置猫 rig-body/head/tail；用户形象上传后**自动生成** pet-rig-body/head/tail + 闭眼帧 + 压耳帧（5 个，AI 生成，透明底，权限 600）
+- 渲染：Canvas 2D 层级变换（尾→身→头），持续运行 requestAnimationFrame，30fps 限流；参数：呼吸 1.15Hz、摆尾 1.05Hz、头点 1.4Hz；走路时提高频率与幅度
+- 眨眼：每 3–6 秒切闭眼帧 140ms；耳朵抖动：每 8–15 秒切压耳帧 800ms（均需可选部件，缺失自动跳过）
 - 动作联动：进入动作时暂停骨骼切序列帧，结束自动恢复骨骼；切换形态/换图会释放 RAF，避免竞态
 - 验证：console 记录 `[rig] enabled/disabled` 与动作切换一致；窗口截图确认组合渲染自然、连续捕获画面不同
 - 限制：非网格变形，是「部件层级 + 变换」的轻量骨骼；真正的网格蒙皮需 Live2D/Spine
