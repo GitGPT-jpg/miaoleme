@@ -59,3 +59,48 @@ test('回归：上传入口不得引用未定义的 refs/常量', () => {
   assert.match(block, /planUploadCopies\(files/, '上传入口使用 planUploadCopies');
   assert.match(block, /const refs = plan\.map/, 'refs 有定义后再使用');
 });
+
+test('回归：骨骼渲染路径必须真正调用头部网格 warp（曾为死代码）', () => {
+  const pet = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'pet.js'), 'utf-8');
+  const start = pet.indexOf('function drawRig(');
+  assert.ok(start >= 0, 'drawRig not found');
+  const brace = pet.indexOf('{', start);
+  let depth = 0;
+  for (let i = brace; i < pet.length; i++) {
+    if (pet[i] === '{') depth++;
+    else if (pet[i] === '}') {
+      depth--;
+      if (depth === 0) {
+        const body = pet.slice(brace, i + 1);
+        // 头部绘制处必须调用 drawHeadWarped + bandOffsets，而不是裸 drawImage(pickHead)
+        assert.match(body, /drawHeadWarped\(pickHead\(t\)/, 'drawRig 内必须调用 drawHeadWarped(pickHead(t))');
+        assert.match(body, /WarpMath\.bandOffsets\(gaze\.x, gaze\.y\)/, '头部 warp 必须使用 bandOffsets');
+        assert.equal(/drawImage\(pickHead\(t\)/.test(body), false, '头部不得再走裸 drawImage');
+        return;
+      }
+    }
+  }
+  throw new Error('unbalanced braces in drawRig');
+});
+
+test('回归：眨眼/压耳部件必须真正加载进 rig（曾只加载身/头/尾）', () => {
+  const pet = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'pet.js'), 'utf-8');
+  const start = pet.indexOf('function loadRig(');
+  assert.ok(start >= 0, 'loadRig not found');
+  const brace = pet.indexOf('{', start);
+  let depth = 0;
+  for (let i = brace; i < pet.length; i++) {
+    if (pet[i] === '{') depth++;
+    else if (pet[i] === '}') {
+      depth--;
+      if (depth === 0) {
+        const body = pet.slice(brace, i + 1);
+        assert.match(body, /load\(res\.parts\.blink\)/, 'loadRig 必须加载 parts.blink');
+        assert.match(body, /load\(res\.parts\.ears\)/, 'loadRig 必须加载 parts.ears');
+        assert.match(body, /blink: blink \|\| null, ears: ears \|\| null/, 'rig 对象必须写入 blink/ears');
+        return;
+      }
+    }
+  }
+  throw new Error('unbalanced braces in loadRig');
+});

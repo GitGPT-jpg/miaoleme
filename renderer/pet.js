@@ -207,9 +207,9 @@ function loadRig() {
       im.onerror = () => resolve(null);
       im.src = u;
     });
-    Promise.all([load(res.parts.body), load(res.parts.head), load(res.parts.tail)]).then(([b, h, t]) => {
+    Promise.all([load(res.parts.body), load(res.parts.head), load(res.parts.tail), load(res.parts.blink), load(res.parts.ears)]).then(([b, h, t, blink, ears]) => {
       if (!b || !h || !t) { disableRig(); return; }
-      rig = { body: b, head: h, tail: t, blink: null, ears: null };
+      rig = { body: b, head: h, tail: t, blink: blink || null, ears: ears || null };
       enableRig();
     });
   });
@@ -360,7 +360,9 @@ function drawRig(t) {
   );
   rctx.translate(0, Math.sin(t * (walking ? 5.2 : 1.4)) * (walking ? 5 : 2.4));
   if (acting) rctx.rotate(Math.sin(t * 2.4) * 0.02);
-  rctx.drawImage(pickHead(t), -RIG.head.w / 2, -RIG.head.h * 0.82, RIG.head.w, RIG.head.h);
+  // 头部 2×2 网格 warp：跟随视线轻微变形，让头部显得「活」
+  // drawHeadWarped 顶部对齐 -h，补 0.18h 保持与原 drawImage(-h*0.82) 锚点一致
+  drawHeadWarped(pickHead(t), 0, RIG.head.h * 0.18, RIG.head.w, RIG.head.h, 0, WarpMath.bandOffsets(gaze.x, gaze.y));
   rctx.restore();
 }
 
