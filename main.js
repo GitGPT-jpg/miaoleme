@@ -74,15 +74,22 @@ const BUNDLED_ACTIONS = {
   drink: path.join(__dirname, 'assets', 'cat-3d-drink.png')
 };
 
+const dataUrlCache = new Map(); // key: path|mtime|size -> dataURL
 function fileToDataUrl(p) {
   if (!p || !fs.existsSync(p)) return null;
   try {
+    const st = fs.statSync(p);
+    const key = `${p}|${st.mtimeMs}|${st.size}`;
+    if (dataUrlCache.has(key)) return dataUrlCache.get(key);
+    if (dataUrlCache.size > 40) dataUrlCache.clear();
     const ext = path.extname(p).toLowerCase().replace('.', '');
     const mime = ext === 'png' ? 'image/png'
       : ext === 'gif' ? 'image/gif'
       : ext === 'webp' ? 'image/webp'
       : 'image/jpeg';
-    return `data:${mime};base64,${fs.readFileSync(p).toString('base64')}`;
+    const url = `data:${mime};base64,${fs.readFileSync(p).toString('base64')}`;
+    dataUrlCache.set(key, url);
+    return url;
   } catch (e) {
     return null;
   }
@@ -626,9 +633,12 @@ function inDnd() {
 }
 
 function notify(title, body) {
+  if (state.quiet) return;         // 安静模式
   if (inDnd()) return;             // 免打扰时段静默
   if (Notification.isSupported()) {
-    new Notification({ title, body }).show();
+    const n = new Notification({ title, body });
+    n.on('click', () => openPanel());
+    n.show();
   }
 }
 
@@ -797,6 +807,25 @@ function restorePomodoroOnStartup() {
   }
 }
 
+// ---------- IPC 安全包装：只信任本应用的两个窗口 ----------
+function isTrustedSender(e) {
+  const wc = e && e.sender;
+  if (!wc) return false;
+  return (petWin && wc === petWin.webContents) || (panelWin && wc === panelWin.webContents);
+}
+function handle(channel, fn) {
+  ipcMain.handle(channel, (e, ...args) => {
+    if (!isTrustedSender(e)) throw new Error('untrusted sender');
+    return fn(e, ...args);
+  });
+}
+function on(channel, fn) {
+  ipcMain.on(channel, (e, ...args) => {
+    if (!isTrustedSender(e)) return;
+    fn(e, ...args);
+  });
+}
+
 // ---------- 对外状态（给面板用） ----------
 function publicState() {
   return {
@@ -868,9 +897,9 @@ function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-ipcMain.handle('get-state', () => publicState());
+handle('get-state', () => publicState());
 
-ipcMain.handle('set-form', (e, form) => {
+handle('set-form', (e, form) => {
   const allowed = ['cat', 'robot', 'slime', 'custom'];
   if (!allowed.includes(form)) return { ok: false, error: 'invalid form', state: publicState() };
   setForm(form);
@@ -878,11 +907,11 @@ ipcMain.handle('set-form', (e, form) => {
 });
 
 // 自定义图片：读取当前图片为 dataURL（受 CSP 限制，用 data: 而非 file://）
-ipcMain.handle('get-custom-image', () => customImageDataUrl());
-ipcMain.handle('get-custom-frames', () => customFrames());
+handle('get-custom-image', () => customImageDataUrl());
+handle('get-custom-frames', () => customFrames());
 
 // 上传自定义图片：打开文件选择框，复制到 userData 后记忆
-ipcMain.handle('upload-custom-image', async () => {
+handle('upload-custom-image', async () => {
   const res = await dialog.showOpenDialog({
     title: '选择桌宠图片',
     properties: ['openFile'],
@@ -892,6 +921,20 @@ ipcMain.handle('upload-custom-image', async () => {
   try {
     const src = res.filePaths[0];
     const ext = path.extname(src).toLowerCase() || '.png';
+    try {
+      const st = fs.statSync(src);
+      if (st.size > 20 * 1024 * 1024) return { ok: false, error: 'image_too_large' };
+      const head = Buffer.alloc(12);
+      const fd = fs.openSync(src, 'r');
+      try { fs.readSync(fd, head, 0, 12, 0); } finally { fs.closeSync(fd); }
+      const isPng = head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47;
+      const isJpg = head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
+      const isGif = head.slice(0, 3).toString('ascii') === 'GIF';
+      const isWebp = head.slice(0, 4).toString('ascii') === 'RIFF' && head.slice(8, 12).toString('ascii') === 'WEBP';
+      if (!isPng && !isJpg && !isGif && !isWebp) return { ok: false, error: 'invalid_image' };
+    } catch (e) {
+      return { ok: false, error: 'invalid_image' };
+    }
     const jobId = `upload-${Date.now()}-${++genSeq}`;
     // 每次上传独立输入快照，避免被下一次上传覆盖
     const dest = path.join(app.getPath('userData'), `pet-custom-${jobId}${ext}`);
@@ -916,9 +959,9 @@ ipcMain.handle('upload-custom-image', async () => {
 });
 
 // 生成任务查询 / 取消 / 重试失败项
-ipcMain.handle('get-gen-job', () => jobSnapshot(genJob) || state.genJob);
-ipcMain.handle('cancel-gen', () => { cancelGenJob(); return jobSnapshot(genJob); });
-ipcMain.handle('retry-gen', () => {
+handle('get-gen-job', () => jobSnapshot(genJob) || state.genJob);
+handle('cancel-gen', () => { cancelGenJob(); return jobSnapshot(genJob); });
+handle('retry-gen', () => {
   const src = state.customImage;
   if (!src || !fs.existsSync(src)) return { ok: false, error: 'no_source' };
   const only = [];
@@ -933,7 +976,7 @@ ipcMain.handle('retry-gen', () => {
   return { ok: true, job: jobSnapshot(job) };
 });
 
-ipcMain.handle('set-water', (e, cfg) => {
+handle('set-water', (e, cfg) => {
   const c = cfg || {};
   state.water = Object.assign({}, state.water, {
     enabled: !!c.enabled,
@@ -950,7 +993,7 @@ ipcMain.handle('set-water', (e, cfg) => {
   return publicState();
 });
 
-ipcMain.handle('add-meeting', (e, payload) => {
+handle('add-meeting', (e, payload) => {
   const title = safeTitle(payload && payload.title);
   const ts = safeTs(payload && payload.ts);
   if (!title || !ts) return publicState();
@@ -960,14 +1003,14 @@ ipcMain.handle('add-meeting', (e, payload) => {
   return publicState();
 });
 
-ipcMain.handle('remove-meeting', (e, id) => {
+handle('remove-meeting', (e, id) => {
   state.meetings = state.meetings.filter((m) => m.id !== id);
   state.notifiedMeetings = clearMarks(state.notifiedMeetings, String(id));
   saveState();
   return publicState();
 });
 
-ipcMain.handle('add-ddl', (e, payload) => {
+handle('add-ddl', (e, payload) => {
   const title = safeTitle(payload && payload.title);
   const ts = safeTs(payload && payload.ts);
   if (!title || !ts) return publicState();
@@ -977,7 +1020,7 @@ ipcMain.handle('add-ddl', (e, payload) => {
   return publicState();
 });
 
-ipcMain.handle('remove-ddl', (e, id) => {
+handle('remove-ddl', (e, id) => {
   state.ddls = state.ddls.filter((d) => d.id !== id);
   state.notifiedDdls = clearMarks(state.notifiedDdls, String(id));
   saveState();
@@ -985,7 +1028,7 @@ ipcMain.handle('remove-ddl', (e, id) => {
 });
 
 // 久坐
-ipcMain.handle('set-sit', (e, cfg) => {
+handle('set-sit', (e, cfg) => {
   const c = cfg || {};
   state.sit = Object.assign({}, state.sit, {
     enabled: !!c.enabled,
@@ -997,7 +1040,7 @@ ipcMain.handle('set-sit', (e, cfg) => {
 });
 
 // 免打扰
-ipcMain.handle('set-dnd', (e, cfg) => {
+handle('set-dnd', (e, cfg) => {
   const c = cfg || {};
   const okTime = (s) => {
     const m = /^(\d{1,2}):(\d{2})$/.exec(String(s || ''));
@@ -1014,7 +1057,7 @@ ipcMain.handle('set-dnd', (e, cfg) => {
 });
 
 // 番茄钟配置 + 控制
-ipcMain.handle('set-pomodoro', (e, cfg) => {
+handle('set-pomodoro', (e, cfg) => {
   const c = cfg || {};
   state.pomodoro = {
     workMin: Math.min(120, Math.max(1, parseInt(c.workMin, 10) || 25)),
@@ -1023,18 +1066,18 @@ ipcMain.handle('set-pomodoro', (e, cfg) => {
   saveState();
   return publicState();
 });
-ipcMain.on('pomodoro-start', () => startPomodoro());
-ipcMain.on('pomodoro-stop', () => stopPomodoro());
+on('pomodoro-start', () => startPomodoro());
+on('pomodoro-stop', () => stopPomodoro());
 
 // 主题
-ipcMain.handle('set-theme', (e, theme) => {
+handle('set-theme', (e, theme) => {
   state.theme = theme === 'dark' ? 'dark' : 'light';
   saveState();
   return publicState();
 });
 
 // 开机自启
-ipcMain.handle('set-autolaunch', (e, enabled) => {
+handle('set-autolaunch', (e, enabled) => {
   state.autoLaunch = !!enabled;
   try {
     app.setLoginItemSettings({ openAtLogin: state.autoLaunch, openAsHidden: true });
@@ -1044,7 +1087,7 @@ ipcMain.handle('set-autolaunch', (e, enabled) => {
 });
 
 // 亲密度 +1（桌宠被抚摸/互动）
-ipcMain.handle('add-intimacy', (e, n) => {
+handle('add-intimacy', (e, n) => {
   const delta = Math.min(10, Math.max(1, parseInt(n, 10) || 1));
   state.stats.intimacy += delta;
   saveState();
@@ -1052,7 +1095,7 @@ ipcMain.handle('add-intimacy', (e, n) => {
 });
 
 // 喝水打卡（不计亲密度，仅统计）
-ipcMain.handle('drink-water', () => {
+handle('drink-water', () => {
   state.stats.waterDone += 1;
   state.water.lastRemindTs = Date.now(); // 顺延下次提醒
   saveState();
@@ -1060,48 +1103,48 @@ ipcMain.handle('drink-water', () => {
 });
 
 // 喂水 / 喂猫粮 / 稍后提醒：统一走领域函数
-ipcMain.handle('feed-water', () => { feedWater(); return publicState(); });
-ipcMain.handle('feed-food', () => { feedFood(); return publicState(); });
-ipcMain.on('snooze', (e, minutes) => { snoozeAll(minutes); });
+handle('feed-water', () => { feedWater(); return publicState(); });
+handle('feed-food', () => { feedFood(); return publicState(); });
+on('snooze', (e, minutes) => { snoozeAll(minutes); });
 
 // 安静模式
-ipcMain.handle('set-quiet', (e, enabled) => {
+handle('set-quiet', (e, enabled) => {
   state.quiet = !!enabled;
   saveState();
   return publicState();
 });
 
 // 桌宠点击穿透控制：鼠标在宠物上时可交互，否则穿透
-ipcMain.on('set-ignore-mouse', (e, ignore) => {
+on('set-ignore-mouse', (e, ignore) => {
   if (petWin) petWin.setIgnoreMouseEvents(ignore, { forward: true });
 });
 
 // 手动拖拽桌宠窗口（比 -webkit-app-region 更可靠，且不受穿透影响）
-ipcMain.handle('get-win-pos', () => {
+handle('get-win-pos', () => {
   if (!petWin) return { x: 0, y: 0 };
   const [x, y] = petWin.getPosition();
   return { x, y };
 });
-ipcMain.on('set-win-pos', (e, x, y) => {
+on('set-win-pos', (e, x, y) => {
   if (!petWin || !Number.isFinite(x) || !Number.isFinite(y)) return;
   const [w, h] = petWin.getSize();
   const disp = screen.getDisplayNearestPoint({ x: Math.round(x), y: Math.round(y) });
   const p = clampToArea(x, y, w, h, disp.workArea);
   petWin.setPosition(p.x, p.y);
 });
-ipcMain.on('save-win-pos', (e, x, y) => {
+on('save-win-pos', (e, x, y) => {
   if (!Number.isFinite(x) || !Number.isFinite(y)) return;
   state.petPos = { x: Math.round(x), y: Math.round(y) };
   saveState();
 });
 
-ipcMain.on('pet-say', (e, msg) => petSay(msg.text, msg.mood, true));
-ipcMain.on('trigger-action', (e, name) => {
+on('pet-say', (e, msg) => petSay(msg.text, msg.mood, true));
+on('trigger-action', (e, name) => {
   const allowed = ['roll', 'groom', 'eat', 'sleep', 'drink'];
   if (!allowed.includes(name)) return;
   if (petWin) petWin.webContents.send('pet-say', { action: name });
 });
-ipcMain.on('open-panel', openPanel);
+on('open-panel', openPanel);
 
 // ---------- 生命周期 ----------
 let reminderTimer = null;
@@ -1143,6 +1186,8 @@ app.on('will-quit', () => {
   for (const child of genChildren) { try { child.kill('SIGKILL'); } catch (e) { /* already gone */ } }
   genChildren.clear();
 });
+
+app.on('activate', () => { openPanel(); });
 
 app.on('window-all-closed', (e) => {
   // 保持常驻，不随窗口关闭退出
