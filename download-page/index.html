@@ -31,7 +31,21 @@
   <div class="wrap">
     <img class="logo" src="icon.png" alt="喵了么" />
     <h1><span>喵了么</span> · 临时下载页</h1>
-    <p class="sub">桌面桌宠小助手 · Windows 免安装版（内测 · v0.6.5）</p>
+    <p class="sub">桌面桌宠小助手 · Windows / macOS 免安装版（内测 · v0.6.5）</p>
+
+    <div class="card">
+      <h2>🍎 macOS（Apple Silicon · M 系列）</h2>
+      <a class="btn" href="https://lingdu-desktop-pet.popo.baidu-int.com/miaoleme-mac-0.6.5.dmg" download>下载 喵了么 v0.6.5（约 92MB）</a>
+      <div class="meta">
+        文件名：<code>miaoleme-mac-0.6.5.dmg</code><br />
+        SHA-256：<code>7c112cc6fd87e183a8a7ca4f432ee99f9384c000c1fe870aabbe3c6ae9ca5c80</code>
+      </div>
+      <div class="note">
+        标准安装镜像（dmg）：双击打开，把 <code>喵了么</code> 拖进旁边的「Applications」文件夹，然后从启动台运行。<br />
+        首次打开若提示「无法验证开发者」：右键 App →「打开」→ 再点「打开」。<br />
+        需要 macOS 12+；Intel Mac 暂未提供。
+      </div>
+    </div>
 
     <div class="card">
       <h2>🪟 Windows 10/11（x64）</h2>
@@ -50,22 +64,14 @@
     </div>
 
     <div class="card">
-      <h2>🍎 macOS</h2>
-      <p class="meta" style="margin-top:0">
-        本次临时页只托管 Windows 包（macOS 安装包超过本页 100MB 限制）。
-        Mac 版请向作者索取 <code>.dmg</code>，或从项目仓库构建：<code>npm ci &amp;&amp; npm run dist</code>。
-      </p>
-    </div>
-
-    <div class="card">
       <h2>使用说明</h2>
-      <p class="meta" style="margin-bottom:8px">首次使用：打开控制台 → 设置 → 图像生成服务 → 填写并保存（未配置时上传照片只会显示原图）。</p>
-      <p class="meta" style="margin-bottom:8px">内测说明：Windows 包基于 Electron 33（受本页 100MB 托管上限约束）；macOS 版为 Electron 45。</p>
+      <p class="meta" style="margin-bottom:8px">首次使用：打开控制台 → 设置 → 图像生成服务 → 填写并保存（未配置时上传照片只会显示原图）。上传照片支持 HEIC（iPhone 直出）、大图与竖拍。</p>
+      <p class="meta" style="margin-bottom:8px">内测说明：Windows 与 macOS 免安装包均基于 Electron 33（受本页 100MB 托管上限约束，两端同版本同功能）；开发者日常验证在 macOS Electron 45。</p>
       <ol>
-        <li>解压后双击 <code>喵了么.exe</code>，桌宠会出现在屏幕角落，控制台随启动打开</li>
+        <li>安装后双击运行（Mac 从启动台，Windows 双击 <code>喵了么.exe</code>），桌宠会出现在屏幕角落，控制台随启动打开</li>
         <li>关闭控制台不会退出，程序常驻在系统托盘（小猫头图标）</li>
         <li>上传自己的照片可生成 3D 形象（需配置生成服务；未配置时使用原图）</li>
-        <li>数据保存在本机 <code>%APPDATA%\miaoleme</code>，不联网上传（除你主动启用的形象生成）</li>
+        <li>数据保存在本机（Mac：<code>~/Library/Application Support/miaoleme</code>；Windows：<code>%APPDATA%\miaoleme</code>），不联网上传（除你主动启用的形象生成）</li>
       </ol>
     </div>
 

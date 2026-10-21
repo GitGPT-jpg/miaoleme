@@ -14,18 +14,34 @@
     min-height: 100vh;
   }
   .wrap { max-width: 960px; margin: 0 auto; padding: 0 20px; }
-  header { text-align: center; padding: 64px 20px 40px; }
-  header img.logo { width: 96px; height: 96px; border-radius: 24px; box-shadow: 0 10px 30px rgba(106,141,255,.35); }
+  header { text-align: center; padding: 60px 20px 36px; }
+  header img.logo { width: 92px; height: 92px; border-radius: 24px; box-shadow: 0 10px 30px rgba(106,141,255,.35); }
   h1 { font-size: 34px; margin-top: 18px; }
   h1 .grad { background: linear-gradient(90deg, #6a8dff, #8f6aff, #ff8a5c); -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .tagline { color: #7a8093; margin-top: 10px; font-size: 16px; }
-  .hero-cat { margin: 26px auto 0; width: 220px; display: block; filter: drop-shadow(0 18px 24px rgba(40,50,90,.25)); animation: float 3.6s ease-in-out infinite; }
+  .tagline { color: #7a8093; margin-top: 10px; font-size: 16px; max-width: 720px; margin-left: auto; margin-right: auto; }
+  .hero-cat { margin: 24px auto 0; width: 210px; display: block; filter: drop-shadow(0 18px 24px rgba(40,50,90,.25)); animation: float 3.6s ease-in-out infinite; }
   @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
-  .badges { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 22px; }
+  .badges { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 20px; }
   .badge { background: #fff; border-radius: 20px; padding: 6px 14px; font-size: 13px; color: #5a6280; box-shadow: 0 2px 8px rgba(40,50,90,.08); }
-  section { margin: 48px 0; }
+  section { margin: 46px 0; }
   h2 { font-size: 22px; text-align: center; margin-bottom: 26px; }
   h2 .dot { color: #ff8a5c; }
+
+  /* 下载区 */
+  .dl-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+  .dl-card { background: #fff; border-radius: 18px; padding: 26px 22px; box-shadow: 0 6px 20px rgba(40,50,90,.08); text-align: center; transition: transform .2s; }
+  .dl-card:hover { transform: translateY(-4px); }
+  .dl-card .plat-icon { font-size: 40px; }
+  .dl-card h3 { font-size: 18px; margin: 10px 0 4px; }
+  .dl-card .req { font-size: 12px; color: #9aa0b0; margin-bottom: 14px; }
+  .dl-card a.btn { display: inline-block; background: linear-gradient(135deg, #6a8dff, #8f6aff); color: #fff; text-decoration: none; padding: 11px 28px; border-radius: 24px; font-weight: 600; box-shadow: 0 8px 18px rgba(106,141,255,.35); transition: transform .2s; }
+  .dl-card a.btn:hover { transform: translateY(-2px); }
+  .dl-card a.btn.mac { background: linear-gradient(135deg, #ff8a5c, #ff6a8a); box-shadow: 0 8px 18px rgba(255,138,92,.35); }
+  .dl-card .meta { font-size: 12px; color: #9aa0b0; margin-top: 12px; }
+  .install-hint { background: #fff; border-radius: 16px; padding: 18px 22px; margin-top: 16px; box-shadow: 0 4px 14px rgba(40,50,90,.06); font-size: 13px; color: #5a6280; }
+  .install-hint b { color: #2c3140; }
+  .install-hint ol { margin: 8px 0 0 20px; }
+
   .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
   .card { background: #fff; border-radius: 16px; padding: 20px 16px; box-shadow: 0 4px 16px rgba(40,50,90,.06); transition: transform .2s; }
   .card:hover { transform: translateY(-4px); }
@@ -33,49 +49,79 @@
   .card h3 { font-size: 15px; margin: 10px 0 6px; }
   .card p { font-size: 13px; color: #7a8093; }
   .frames { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
-  .frame { width: 110px; text-align: center; }
+  .frame { width: 108px; text-align: center; }
   .frame img { width: 100%; border-radius: 14px; background: rgba(255,255,255,.7); box-shadow: 0 6px 14px rgba(40,50,90,.12); }
   .frame span { display: block; font-size: 12px; color: #7a8093; margin-top: 6px; }
   .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
   .step { background: #fff; border-radius: 16px; padding: 20px; text-align: center; box-shadow: 0 4px 16px rgba(40,50,90,.06); }
   .step b { display: inline-flex; width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(135deg, #6a8dff, #8f6aff); color: #fff; align-items: center; justify-content: center; font-size: 15px; margin-bottom: 10px; }
   .step p { font-size: 13px; color: #5a6280; }
-  .cta { text-align: center; background: #fff; border-radius: 20px; padding: 34px 20px; box-shadow: 0 6px 24px rgba(40,50,90,.08); }
-  .cta a.btn { display: inline-block; background: linear-gradient(135deg, #6a8dff, #8f6aff); color: #fff; text-decoration: none; padding: 12px 30px; border-radius: 26px; font-weight: 600; box-shadow: 0 8px 20px rgba(106,141,255,.4); transition: transform .2s; }
-  .cta a.btn:hover { transform: translateY(-2px); }
-  .cta p.note { font-size: 12px; color: #9aa0b0; margin-top: 14px; }
   footer { text-align: center; padding: 30px 0 46px; color: #9aa0b0; font-size: 12px; }
+  @media (max-width: 640px) { h1 { font-size: 26px; } header img.logo { width: 72px; height: 72px; } }
 </style>
 </head>
 <body>
   <header>
     <img class="logo" src="assets/icon.png" alt="喵了么图标" />
     <h1><span class="grad">喵了么</span> · 桌面桌宠小助手</h1>
-    <p class="tagline">一只住在桌面上的 3D 猫咪：内置形象持续呼吸摆尾，提醒你喝水开会赶 DDL，陪你玩游戏、帮你决定吃什么——上传照片，还能变成你自己的专属桌宠（需配置生成服务）。</p>
-    <img class="hero-cat" src="assets/cat-3d-idle.png" alt="3D 猫咪" />
+    <p class="tagline">一只住在桌面上的 3D 猫咪：内置形象持续呼吸摆尾，提醒你喝水开会赶 DDL，陪你玩游戏、帮你决定吃什么——上传你的照片（支持 iPhone 直出 HEIC），还能变成你自己的专属桌宠（需配置生成服务）。</p>
+    <img class="hero-cat" src="assets/cat-3d-idle.webp" alt="3D 猫咪" />
     <div class="badges">
       <span class="badge">🐱 三种内置形态 + 自定义</span>
-      <span class="badge">📷 照片变 3D 桌宠（需配置生成服务）</span>
+      <span class="badge">📷 照片变 3D 桌宠（HEIC/大图/竖拍都支持）</span>
       <span class="badge">💧 喂水喂粮养成</span>
       <span class="badge">⏰ 喝水/会议/DDL 提醒</span>
-      <span class="badge">🦴 2D 骨骼动画（内置形象持续动作）</span>
+      <span class="badge">🦴 2D 骨骼动画（眨眼/耳朵/尾巴弹簧）</span>
       <span class="badge">🎮 4 款小游戏</span>
       <span class="badge">🍱 吃饭转盘</span>
     </div>
   </header>
 
   <div class="wrap">
+    <section id="download">
+      <h2>下载<span class="dot">安装</span></h2>
+      <div class="dl-grid">
+        <div class="dl-card">
+          <div class="plat-icon">🍎</div>
+          <h3>macOS</h3>
+          <p class="req">Apple Silicon（M 系列）· macOS 12+</p>
+          <a class="btn mac" href="miaoleme-mac-0.6.5.dmg" download>下载 Mac 版 · v0.6.5</a>
+          <p class="meta">dmg 安装镜像 · 约 92MB<br />SHA-256 见下载页</p>
+        </div>
+        <div class="dl-card">
+          <div class="plat-icon">🪟</div>
+          <h3>Windows</h3>
+          <p class="req">Windows 10/11 · x64</p>
+          <a class="btn" href="https://miaoleme-download.popo.baidu-int.com/miaoleme-win-x64-0.6.5.tar.xz" download>下载 Windows 版 · v0.6.5</a>
+          <p class="meta">tar.xz 免安装包 · 约 78MB<br />SHA-256 见下载页</p>
+        </div>
+      </div>
+      <div class="install-hint">
+        <b>🍎 Mac 安装</b>（dmg 标准镜像）：
+        <ol>
+          <li>双击打开 dmg，把「喵了么」拖进旁边的「Applications」文件夹</li>
+          <li>从启动台（或应用程序文件夹）打开</li>
+          <li>首次打开若提示「无法验证开发者」：右键 App →「打开」→ 再点「打开」（未签名应用的通行方式）</li>
+        </ol>
+        <b style="display:block;margin-top:12px">🪟 Windows 安装</b>（详见下载页）：
+        <ol>
+          <li>把 <code>miaoleme-win-x64-0.6.5.tar.xz</code> 放到任意目录，在终端执行 <code>tar -xf miaoleme-win-x64-0.6.5.tar.xz</code></li>
+          <li>进入解压出的文件夹，双击 <code>喵了么.exe</code> 运行</li>
+        </ol>
+      </div>
+    </section>
+
     <section>
       <h2>它会自己<span class="dot">动</span></h2>
       <div class="frames">
-        <div class="frame"><img src="assets/cat-3d-walk.png" alt="走路"><span>🚶 溜达（4 帧迈步循环）</span></div>
-        <div class="frame"><img src="assets/cat-3d-roll.png" alt="打滚"><span>🙃 打滚露肚皮</span></div>
-        <div class="frame"><img src="assets/cat-3d-groom.png" alt="舔毛"><span>👅 舔毛</span></div>
-        <div class="frame"><img src="assets/cat-3d-eat.png" alt="吃饭"><span>🍚 吃猫粮</span></div>
-        <div class="frame"><img src="assets/cat-3d-sleep.png" alt="睡觉"><span>😴 睡觉（翻身呼吸）</span></div>
-        <div class="frame"><img src="assets/cat-3d-drink.png" alt="喝水"><span>💧 喝水</span></div>
-        <div class="frame"><img src="assets/cat-3d-sit.png" alt="坐姿"><span>🪑 站坐交替呼吸</span></div>
-        <div class="frame"><img src="assets/cat-3d-happy.png" alt="开心"><span>😄 开心抬头</span></div>
+        <div class="frame"><img src="assets/cat-3d-walk.webp" alt="走路"><span>🚶 溜达</span></div>
+        <div class="frame"><img src="assets/cat-3d-roll.webp" alt="打滚"><span>🙃 打滚露肚皮</span></div>
+        <div class="frame"><img src="assets/cat-3d-groom.webp" alt="舔毛"><span>👅 舔毛</span></div>
+        <div class="frame"><img src="assets/cat-3d-eat.webp" alt="吃饭"><span>🍚 吃猫粮</span></div>
+        <div class="frame"><img src="assets/cat-3d-sleep.webp" alt="睡觉"><span>😴 睡觉</span></div>
+        <div class="frame"><img src="assets/cat-3d-drink.webp" alt="喝水"><span>💧 喝水</span></div>
+        <div class="frame"><img src="assets/cat-3d-sit.webp" alt="坐姿"><span>🪑 站坐交替</span></div>
+        <div class="frame"><img src="assets/cat-3d-happy.webp" alt="开心"><span>😄 开心抬头</span></div>
       </div>
     </section>
 
@@ -86,33 +132,26 @@
         <div class="card"><div class="icon">🍚</div><h3>饭点讨粮</h3><p>中午/晚上饭点提醒，喂猫粮播干饭动画，亲密度+2</p></div>
         <div class="card"><div class="icon">📅</div><h3>会议提醒</h3><p>提前 5 分钟 + 到点两次提醒，多一层兜底</p></div>
         <div class="card"><div class="icon">⏰</div><h3>DDL 提醒</h3><p>提前 1 天 / 1 小时 / 到点三档，守住工作截止线</p></div>
-        <div class="card"><div class="icon">🍅</div><h3>番茄钟</h3><p>专注/休息自动循环，完成计入成就和等级</p></div>
+        <div class="card"><div class="icon">🍅</div><h3>番茄钟</h3><p>专注/休息自动循环，重启不忘，完成计入成就和等级</p></div>
         <div class="card"><div class="icon">🍱</div><h3>吃饭转盘</h3><p>午餐/晚餐随机选，支持自定义菜单，少纠结一次</p></div>
         <div class="card"><div class="icon">🎮</div><h3>小游戏</h3><p>石头剪刀布、猜数字、记忆翻牌、反应力测试</p></div>
         <div class="card"><div class="icon">🌟</div><h3>养成系统</h3><p>亲密度/喝水/番茄成就 + 等级进度条</p></div>
         <div class="card"><div class="icon">🌙</div><h3>免打扰 & 暗色</h3><p>免打扰时段静默通知，暗色模式护眼</p></div>
-        <div class="card"><div class="icon">📷</div><h3>照片变桌宠</h3><p>上传任意照片，后台自动生成 3D 立体形象全套动作</p></div>
+        <div class="card"><div class="icon">📷</div><h3>照片变桌宠</h3><p>上传最多 6 张照片（HEIC/JPG/PNG），后台自动生成 3D 形象全套动作</p></div>
       </div>
     </section>
 
     <section>
       <h2>照片怎么变成<span class="dot">3D 桌宠</span></h2>
       <div class="steps">
-        <div class="step"><b>1</b><p>控制台点「上传我的图片」</p></div>
-        <div class="step"><b>2</b><p>后台自动生成 3D 立体形象（先出站立，其余并行）</p></div>
-        <div class="step"><b>3</b><p>6 个姿势自动配齐（喝水/伸懒腰为内置形象动作）</p></div>
+        <div class="step"><b>1</b><p>控制台点「上传我的图片」，多选几张更逼真</p></div>
+        <div class="step"><b>2</b><p>后台自动生成 3D 形象（先出站立，其余并行，11 个素材）</p></div>
+        <div class="step"><b>3</b><p>姿势/动作/骨骼部件自动配齐（眨眼、压耳、尾巴弹簧）</p></div>
         <div class="step"><b>4</b><p>桌宠换上新形象，开始它的桌宠生活</p></div>
-      </div>
-    </section>
-
-    <section>
-      <div class="cta">
-        <a class="btn" href="https://miaoleme-download.popo.baidu-int.com" target="_blank">⬇️ 下载 Windows 版（v0.5.7）</a>
-        <p class="note">内测版本 · Mac 安装包（dmg）请向项目作者获取；本地开发：npm install && npm start</p>
       </div>
     </section>
   </div>
 
-  <footer>喵了么 · 桌面桌宠小助手 · 让提醒变成养猫的快乐</footer>
+  <footer>喵了么 · 桌面桌宠小助手 · v0.6.5 · 让提醒变成养猫的快乐</footer>
 </body>
 </html>
