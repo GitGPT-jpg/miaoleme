@@ -1,6 +1,6 @@
 {
   "name": "miaoleme",
-  "version": "0.5.6",
+  "version": "0.5.7",
   "description": "喵了么 - 桌面端桌宠小助手：喝水/久坐/会议/DDL 提醒、番茄钟、吃饭转盘、小游戏、养成",
   "main": "main.js",
   "scripts": {
@@ -19,14 +19,19 @@
   "build": {
     "appId": "com.zerobreak.desktoppet",
     "productName": "喵了么",
-    "electronLanguages": ["zh-CN", "en-US"],
+    "electronLanguages": [
+      "zh-CN",
+      "en-US"
+    ],
     "files": [
       "main.js",
       "launch.js",
       "lib/**/*",
       "preload.js",
       "renderer/**/*",
-      "assets/**/*"
+      "assets/**/*",
+      "generation.config.example.json",
+      "docs/**/*"
     ],
     "directories": {
       "output": "dist",
