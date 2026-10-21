@@ -199,7 +199,15 @@ function httpsJson(url, headers, payload) {
       headers: Object.assign({ 'Content-Type': 'application/json' }, headers)
     }, (res) => {
       let data = '';
-      res.on('data', (d) => { data += d; });
+      let size = 0;
+      res.on('data', (d) => {
+        size += d.length;
+        if (size > 20 * 1024 * 1024) {
+          req.destroy(new Error('response_too_large'));
+          return;
+        }
+        data += d;
+      });
       res.on('end', () => {
         if (res.statusCode >= 200 && res.statusCode < 300) resolve(data);
         else reject(new Error('HTTP ' + res.statusCode + ' ' + data.slice(0, 200)));
@@ -230,6 +238,13 @@ async function genAvatarFrame(srcPath, poseName, prompt) {
 
   const attemptOnce = async () => {
     let resp;
+    const requireHttps = (u) => /^https:\/\//i.test(String(u || ''));
+    if (cfg.comate && cfg.comate.apiUrl && !requireHttps(cfg.comate.apiUrl) && cfg.provider === 'comate') {
+      return { ok: false, error: 'insecure_url' };
+    }
+    if (cfg.qianfan && cfg.qianfan.apiUrl && !requireHttps(cfg.qianfan.apiUrl) && cfg.provider === 'qianfan') {
+      return { ok: false, error: 'insecure_url' };
+    }
     if (cfg.provider === 'comate' && cfg.comate && cfg.comate.apiUrl) {
       const b64 = fs.readFileSync(srcPath).toString('base64');
       resp = await httpsJson(cfg.comate.apiUrl, { 'login-name': cfg.comate.loginName || '' }, {
@@ -385,7 +400,7 @@ function startGenJob(sourcePath, sourceId, only) {
     genJob = makeEmptySnapshot(jobId, sid, 'unavailable', tasks.length, 'unavailable');
     persistGenJob();
     sendGenStatus(genJob);
-    petSay('（未配置生成服务，先用原图啦）', 'normal');
+    petSay('未配置生成服务，当前使用原图（可在 generation.config.json 配置）', 'normal', true);
     return jobSnapshot(genJob);
   }
   if (!tasks.length) {
@@ -425,7 +440,7 @@ function startGenJob(sourcePath, sourceId, only) {
     if (snap.status === 'completed') petSay('全部姿势生成完成，喜欢吗~', 'happy');
     else if (snap.status === 'partial') petSay(`生成了 ${snap.succeeded}/${snap.total} 个姿势，失败的可以重试~`, 'normal');
     else if (snap.status === 'cancelled') petSay('生成已取消，继续用现在的形象~', 'normal');
-    else petSay('3D 生成没成功，先用原图啦', 'normal');
+    else petSay('3D 生成没成功，已保留原图和已完成帧；检查生成配置后可重试失败项', 'normal', true);
     cleanupOldGenFiles();
   });
 
@@ -596,7 +611,7 @@ function refreshTrayMenu() {
         { label: '伸个懒腰', click: () => petWin && petWin.webContents.send('pet-say', { action: 'stretch' }) }
       ]
     },
-    { label: '💧 喝水打卡', click: () => { state.stats.waterDone += 1; state.water.lastRemindTs = Date.now(); saveState(); petSay('咕噜咕噜~ 谢谢主人！', 'happy'); } },
+    { label: '💧 喝水打卡', click: () => drinkCheckin() },
     {
       label: '😴 稍后提醒',
       submenu: [10, 20, 30].map((min) => ({
@@ -645,8 +660,7 @@ function inDnd() {
 }
 
 function notify(title, body) {
-  if (state.quiet) return;         // 安静模式
-  if (inDnd()) return;             // 免打扰时段静默
+  if (inDnd()) return;             // 免打扰时段静默（安静模式不吞系统通知）
   if (Notification.isSupported()) {
     const n = new Notification({ title, body });
     n.on('click', () => openPanel());
@@ -668,31 +682,39 @@ function checkReminders() {
       saveState();
       broadcastFeedState();
       notify('💧 猫咪口渴了', '猫咪想喝水啦，主人也一起喝一杯吧~（点桌宠的喂水按钮）');
-      petSay('我口渴了…主人也喝点水吧，喂喂我~', 'alert');
+      petSay('我口渴了…主人也喝点水吧，喂喂我~', 'alert', true);
     } else if (state.feed.waterRequest && now - state.feed.waterNagTs > 5 * 60 * 1000) {
       // 还没喂？过 5 分钟再撒娇一次
       state.feed.waterNagTs = now;
       saveState();
-      petSay('还是好渴呀，主人~', 'alert');
+      petSay('还是好渴呀，主人~', 'alert', true);
     }
   }
 
   // 饭点提醒 → 到点讨猫粮：午餐/晚餐各自独立（日期+餐次去重），窗口内未喂会再催
+  if (state.feed.mealRequest && state.feed.mealRequestDate && state.feed.mealRequestDate !== dateKey(now)) {
+    // 跨天后清理残留请求，避免"只撒娇不通知"
+    state.feed.mealRequest = false;
+    state.feed.mealSlot = null;
+    state.feed.mealRequestDate = '';
+  }
   const slot = mealSlotAt(now);
-  if (slot && !state.feed.mealRequest && mealEligible(state.feed, slot, now)) {
+  const snoozed = now < (state.feed.mealSnoozeUntil || 0);
+  if (slot && !snoozed && !state.feed.mealRequest && mealEligible(state.feed, slot, now, state.feed.mealSnoozeUntil)) {
     state.feed.mealRequest = true;
     state.feed.mealSlot = slot;
     state.feed.mealNagTs = now;
     state.feed.lastMealRequest[slot] = dateKey(now);
+    state.feed.mealRequestDate = dateKey(now);
     saveState();
     broadcastFeedState();
     const label = slot === 'lunch' ? '午饭时间到啦' : '晚饭时间到啦';
     notify('🍚 到饭点啦', `${label}~ 记得给猫咪喂猫粮，自己也好好吃饭！`);
-    petSay(`${label}！主人先去吃饭，顺便喂我吃猫粮~`, 'happy');
+    petSay(`${label}！主人先去吃饭，顺便喂我吃猫粮~`, 'happy', true);
   } else if (state.feed.mealRequest && slot && now - state.feed.mealNagTs > 10 * 60 * 1000) {
     state.feed.mealNagTs = now;
     saveState();
-    petSay('肚子咕咕叫…还没吃饭吗，主人？', 'alert');
+    petSay('肚子咕咕叫…还没吃饭吗，主人？', 'alert', true);
   }
 
   // 久坐提醒
@@ -703,7 +725,7 @@ function checkReminders() {
       state.sit.lastRemindTs = now;
       saveState();
       notify('🧍 久坐提醒', '已经坐很久啦，起来活动 2 分钟吧！');
-      petSay('站起来伸展一下吧~', 'alert');
+      petSay('站起来伸展一下吧~', 'alert', true);
     }
   }
 
@@ -717,7 +739,7 @@ function checkReminders() {
     }
     if (notice.title) {
       notify(notice.title, notice.body);
-      if (notice.pet) petSay(notice.pet, 'alert');
+      if (notice.pet) petSay(notice.pet, 'alert', true);
     }
   });
 
@@ -731,7 +753,7 @@ function checkReminders() {
     }
     if (notice.title) {
       notify(notice.title, notice.body);
-      if (notice.pet) petSay(notice.pet, 'alert');
+      if (notice.pet) petSay(notice.pet, 'alert', true);
     }
   });
 }
@@ -888,17 +910,29 @@ function feedWater() {
 
 function feedFood() {
   const now = Date.now();
+  const slot = state.feed.mealSlot || mealSlotAt(now) || 'lunch';
   state.feed.mealRequest = false;
   state.feed.mealNagTs = 0;
   state.feed.mealSlot = null;
-  // 语义：一天只喂一次猫粮；两个餐次都记为已喂，避免当天重复讨粮
-  state.feed.lastMealFed.lunch = dateKey(now);
-  state.feed.lastMealFed.dinner = dateKey(now);
+  state.feed.mealRequestDate = '';
+  // 只把被喂的那一餐记为已喂，晚餐仍会正常触发
+  state.feed.lastMealFed[slot] = dateKey(now);
   state.stats.intimacy += 2;
   saveState();
   broadcastFeedState();
   if (petWin) petWin.webContents.send('pet-say', { action: 'eat', text: '猫粮好吃~ 主人也要好好吃饭哦！', mood: 'happy' });
   notify('🍚 喂饭完成', '猫咪吃饱啦，主人也别忘了自己的饭~');
+}
+
+function drinkCheckin() {
+  state.stats.waterDone += 1;
+  state.water.lastRemindTs = Date.now();
+  state.feed.waterRequest = false;
+  state.feed.waterNagTs = 0;
+  saveState();
+  broadcastFeedState();
+  petSay('咕噜咕噜~ 谢谢主人！', 'happy', true);
+  return state.stats;
 }
 
 function snoozeAll(minutes) {
@@ -908,12 +942,16 @@ function snoozeAll(minutes) {
   if (state.sit.enabled) state.sit.lastRemindTs = now + mins * 60000 - state.sit.intervalMin * 60000;
   state.feed.waterRequest = false;
   state.feed.waterNagTs = 0;
+  const slot = mealSlotAt(now);
+  if (slot) state.feed.lastMealRequest[slot] = '';   // 允许窗口内再次提醒
   state.feed.mealRequest = false;
   state.feed.mealNagTs = 0;
   state.feed.mealSlot = null;
+  state.feed.mealRequestDate = '';
+  state.feed.mealSnoozeUntil = now + mins * 60000;
   saveState();
   broadcastFeedState();
-  petSay(`好的，${mins} 分钟后再提醒~`, 'normal');
+  petSay(`好的，${mins} 分钟后再提醒~`, 'normal', true);
   return mins;
 }
 
@@ -1142,12 +1180,7 @@ handle('add-intimacy', (e, n) => {
 });
 
 // 喝水打卡（不计亲密度，仅统计）
-handle('drink-water', () => {
-  state.stats.waterDone += 1;
-  state.water.lastRemindTs = Date.now(); // 顺延下次提醒
-  saveState();
-  return state.stats;
-});
+handle('drink-water', () => drinkCheckin());
 
 // 喂水 / 喂猫粮 / 稍后提醒：统一走领域函数
 handle('feed-water', () => { feedWater(); return publicState(); });
@@ -1202,7 +1235,12 @@ on('save-win-pos', (e, x, y) => {
   saveState();
 });
 
-on('pet-say', (e, msg) => petSay(msg.text, msg.mood, true));
+on('pet-say', (e, msg) => {
+  if (!msg || typeof msg !== 'object') return;
+  const text = typeof msg.text === 'string' ? msg.text.slice(0, 200) : '';
+  const mood = ['normal', 'happy', 'alert'].includes(msg.mood) ? msg.mood : 'normal';
+  if (text) petSay(text, mood, true);
+});
 on('trigger-action', (e, name) => {
   const allowed = ['roll', 'groom', 'eat', 'sleep', 'drink', 'stretch'];
   if (!allowed.includes(name)) return;
@@ -1246,7 +1284,7 @@ app.whenReady().then(() => {
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   if (reminderTimer) clearInterval(reminderTimer);
-  stopPomodoro(true);
+  if (pomo.timer) clearInterval(pomo.timer);   // 只停计时器，保留 state.pomo 供下次续跑
   for (const child of genChildren) { try { child.kill('SIGKILL'); } catch (e) { /* already gone */ } }
   genChildren.clear();
 });

@@ -134,3 +134,14 @@ test('小游戏战绩：非法值归零、合法值保留', () => {
   const empty = normalizeState({});
   assert.deepEqual(empty.games.rps, { win: 0, lose: 0, draw: 0 });
 });
+
+test('饭点请求日期与稍后提醒时间：归一化', () => {
+  const s = normalizeState({ feed: { mealRequestDate: '2026-10-21', mealSnoozeUntil: 12345, mealSlot: 'dinner' } });
+  assert.equal(s.feed.mealRequestDate, '2026-10-21');
+  assert.equal(s.feed.mealSnoozeUntil, 12345);
+  assert.equal(s.feed.mealSlot, 'dinner');
+  const bad = normalizeState({ feed: { mealRequestDate: 5, mealSnoozeUntil: 'x', mealSlot: 'tea' } });
+  assert.equal(bad.feed.mealRequestDate, '');
+  assert.equal(bad.feed.mealSnoozeUntil, 0);
+  assert.equal(bad.feed.mealSlot, null);
+});

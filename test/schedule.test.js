@@ -104,3 +104,11 @@ test('删除事件清理提醒标记', () => {
   assert.deepEqual(clearMarks(['a:5', 'a:0', 'b:5'], 'a'), ['b:5']);
   assert.deepEqual(clearMarks(null, 'a'), []);
 });
+
+test('稍后提醒期间不触发，到期后恢复', () => {
+  const now = at(12);
+  const feed = { lastMealRequest: {}, lastMealFed: {} };
+  assert.equal(mealEligible(feed, 'lunch', now, now + 10 * 60 * 1000), false);
+  assert.equal(mealEligible(feed, 'lunch', now + 11 * 60 * 1000, now + 10 * 60 * 1000), true);
+  assert.equal(mealEligible(feed, 'lunch', now, 0), true);
+});
