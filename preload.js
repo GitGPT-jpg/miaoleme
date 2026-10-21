@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('api', {
   setAutoLaunch: (v) => ipcRenderer.invoke('set-autolaunch', v),
   setQuiet: (v) => ipcRenderer.invoke('set-quiet', v),
   setMealMenu: (slot, items) => ipcRenderer.invoke('set-meal-menu', slot, items),
+  recordRps: (outcome) => ipcRenderer.invoke('record-rps', outcome),
   addMeeting: (payload) => ipcRenderer.invoke('add-meeting', payload),
   removeMeeting: (id) => ipcRenderer.invoke('remove-meeting', id),
   addDdl: (payload) => ipcRenderer.invoke('add-ddl', payload),

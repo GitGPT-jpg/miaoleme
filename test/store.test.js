@@ -127,3 +127,10 @@ test('自定义吃饭菜单：数量上限 12 项，单项 20 字', () => {
   assert.equal(s.mealMenus.lunch.length, 12);
   assert.ok(s.mealMenus.lunch.every((x) => x.length <= 20));
 });
+
+test('小游戏战绩：非法值归零、合法值保留', () => {
+  const s = normalizeState({ games: { rps: { win: 3, lose: -1, draw: 'x' } } });
+  assert.deepEqual(s.games.rps, { win: 3, lose: 0, draw: 0 });
+  const empty = normalizeState({});
+  assert.deepEqual(empty.games.rps, { win: 0, lose: 0, draw: 0 });
+});
