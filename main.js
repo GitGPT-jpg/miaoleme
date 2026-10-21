@@ -623,7 +623,15 @@ function setForm(form) {
 }
 
 function petSay(text, mood = 'normal', force = false) {
-  if (state.quiet && !force) return;   // 自定义吃饭菜单
+  if (state.quiet && !force) return;   // 小游戏战绩（只接受 0/1 的增量）
+handle('record-rps', (e, outcome) => {
+  if (!['win', 'lose', 'draw'].includes(outcome)) return publicState();
+  state.games.rps[outcome] += 1;
+  saveState();
+  return publicState();
+});
+
+// 自定义吃饭菜单
 handle('set-meal-menu', (e, slot, items) => {
   if (slot !== 'lunch' && slot !== 'dinner') return publicState();
   const arr = Array.isArray(items) ? items.filter((x) => typeof x === 'string').map((x) => x.trim().slice(0, 20)).filter(Boolean).slice(0, 12) : [];
@@ -642,7 +650,15 @@ function inDnd() {
 }
 
 function notify(title, body) {
-  if (state.quiet) return;         // 自定义吃饭菜单
+  if (state.quiet) return;         // 小游戏战绩（只接受 0/1 的增量）
+handle('record-rps', (e, outcome) => {
+  if (!['win', 'lose', 'draw'].includes(outcome)) return publicState();
+  state.games.rps[outcome] += 1;
+  saveState();
+  return publicState();
+});
+
+// 自定义吃饭菜单
 handle('set-meal-menu', (e, slot, items) => {
   if (slot !== 'lunch' && slot !== 'dinner') return publicState();
   const arr = Array.isArray(items) ? items.filter((x) => typeof x === 'string').map((x) => x.trim().slice(0, 20)).filter(Boolean).slice(0, 12) : [];
@@ -860,6 +876,7 @@ function publicState() {
     quiet: state.quiet,
     stats: state.stats,
     mealMenus: state.mealMenus,
+    games: state.games,
     meetings: state.meetings,
     ddls: state.ddls,
     genJob: jobSnapshot(genJob) || state.genJob
@@ -1125,6 +1142,14 @@ handle('drink-water', () => {
 handle('feed-water', () => { feedWater(); return publicState(); });
 handle('feed-food', () => { feedFood(); return publicState(); });
 on('snooze', (e, minutes) => { snoozeAll(minutes); });
+
+// 小游戏战绩（只接受 0/1 的增量）
+handle('record-rps', (e, outcome) => {
+  if (!['win', 'lose', 'draw'].includes(outcome)) return publicState();
+  state.games.rps[outcome] += 1;
+  saveState();
+  return publicState();
+});
 
 // 自定义吃饭菜单
 handle('set-meal-menu', (e, slot, items) => {

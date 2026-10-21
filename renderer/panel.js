@@ -170,8 +170,12 @@ document.getElementById('meet-add').addEventListener('click', async () => {
   renderMeetings(s.meetings);
 });
 
+const lastListJson = { meet: '', ddl: '' };
 function renderMeetings(list) {
   const ul = document.getElementById('meet-list');
+  const sig = JSON.stringify(list);
+  if (sig === lastListJson.meet) return;
+  lastListJson.meet = sig;
   ul.innerHTML = '';
   if (!list.length) { ul.innerHTML = '<div class="empty">暂无会议</div>'; return; }
   const now = Date.now();
@@ -202,6 +206,9 @@ document.getElementById('ddl-add').addEventListener('click', async () => {
 
 function renderDdls(list) {
   const ul = document.getElementById('ddl-list');
+  const sig = JSON.stringify(list);
+  if (sig === lastListJson.ddl) return;
+  lastListJson.ddl = sig;
   ul.innerHTML = '';
   if (!list.length) { ul.innerHTML = '<div class="empty">暂无 DDL</div>'; return; }
   const now = Date.now();
@@ -316,21 +323,26 @@ function applyMealMenus(menus) {
 const RPS = { rock: '✊', scissors: '✌️', paper: '✋' };
 const RPS_NAME = { rock: '石头', scissors: '剪刀', paper: '布' };
 let rpsScore = { win: 0, lose: 0, draw: 0 };
+function renderRpsScore() {
+  document.getElementById('rps-score').textContent = `${rpsScore.win} 胜 ${rpsScore.lose} 负 ${rpsScore.draw} 平`;
+}
 document.querySelectorAll('.rps button').forEach((btn) => {
-  btn.addEventListener('click', () => {
+  btn.addEventListener('click', async () => {
     const me = btn.dataset.rps;
     const keys = Object.keys(RPS);
     const ai = keys[Math.floor(Math.random() * 3)];
+    let outcome;
     let res;
-    if (me === ai) { res = '平局'; rpsScore.draw++; }
+    if (me === ai) { outcome = 'draw'; res = '平局'; }
     else if (
       (me === 'rock' && ai === 'scissors') ||
       (me === 'scissors' && ai === 'paper') ||
       (me === 'paper' && ai === 'rock')
-    ) { res = '你赢了！🎉'; rpsScore.win++; }
-    else { res = '你输了~'; rpsScore.lose++; }
+    ) { outcome = 'win'; res = '你赢了！🎉'; }
+    else { outcome = 'lose'; res = '你输了~'; }
     document.getElementById('rps-result').textContent = `你 ${RPS[me]} vs ${RPS[ai]} 我 → ${res}`;
-    document.getElementById('rps-score').textContent = `${rpsScore.win} 胜 ${rpsScore.lose} 负 ${rpsScore.draw} 平`;
+    const s = await window.api.recordRps(outcome);
+    if (s && s.games) { rpsScore = s.games.rps; renderRpsScore(); }
   });
 });
 
@@ -538,6 +550,7 @@ document.getElementById('feed-food-btn').addEventListener('click', async () => {
 // ---------- 初始化 ----------
 function renderAll(s) {
   if (s.mealMenus) applyMealMenus(s.mealMenus);
+  if (s.games && s.games.rps) { rpsScore = s.games.rps; renderRpsScore(); }
   renderForm(s.form);
   loadCustomPreview();
   renderWater(s.water);
