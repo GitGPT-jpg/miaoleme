@@ -623,7 +623,16 @@ function setForm(form) {
 }
 
 function petSay(text, mood = 'normal', force = false) {
-  if (state.quiet && !force) return;   // 安静模式：自动气泡静默，用户主动操作仍可反馈
+  if (state.quiet && !force) return;   // 自定义吃饭菜单
+handle('set-meal-menu', (e, slot, items) => {
+  if (slot !== 'lunch' && slot !== 'dinner') return publicState();
+  const arr = Array.isArray(items) ? items.filter((x) => typeof x === 'string').map((x) => x.trim().slice(0, 20)).filter(Boolean).slice(0, 12) : [];
+  state.mealMenus[slot] = arr.length >= 2 ? arr : null;
+  saveState();
+  return publicState();
+});
+
+// 安静模式：自动气泡静默，用户主动操作仍可反馈
   if (petWin) petWin.webContents.send('pet-say', { text, mood });
 }
 
@@ -633,7 +642,16 @@ function inDnd() {
 }
 
 function notify(title, body) {
-  if (state.quiet) return;         // 安静模式
+  if (state.quiet) return;         // 自定义吃饭菜单
+handle('set-meal-menu', (e, slot, items) => {
+  if (slot !== 'lunch' && slot !== 'dinner') return publicState();
+  const arr = Array.isArray(items) ? items.filter((x) => typeof x === 'string').map((x) => x.trim().slice(0, 20)).filter(Boolean).slice(0, 12) : [];
+  state.mealMenus[slot] = arr.length >= 2 ? arr : null;
+  saveState();
+  return publicState();
+});
+
+// 安静模式
   if (inDnd()) return;             // 免打扰时段静默
   if (Notification.isSupported()) {
     const n = new Notification({ title, body });
@@ -841,6 +859,7 @@ function publicState() {
     autoLaunch: state.autoLaunch,
     quiet: state.quiet,
     stats: state.stats,
+    mealMenus: state.mealMenus,
     meetings: state.meetings,
     ddls: state.ddls,
     genJob: jobSnapshot(genJob) || state.genJob
@@ -1106,6 +1125,15 @@ handle('drink-water', () => {
 handle('feed-water', () => { feedWater(); return publicState(); });
 handle('feed-food', () => { feedFood(); return publicState(); });
 on('snooze', (e, minutes) => { snoozeAll(minutes); });
+
+// 自定义吃饭菜单
+handle('set-meal-menu', (e, slot, items) => {
+  if (slot !== 'lunch' && slot !== 'dinner') return publicState();
+  const arr = Array.isArray(items) ? items.filter((x) => typeof x === 'string').map((x) => x.trim().slice(0, 20)).filter(Boolean).slice(0, 12) : [];
+  state.mealMenus[slot] = arr.length >= 2 ? arr : null;
+  saveState();
+  return publicState();
+});
 
 // 安静模式
 handle('set-quiet', (e, enabled) => {

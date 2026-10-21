@@ -264,7 +264,10 @@ function buildWheel() {
   });
 }
 
-document.getElementById('meal-type').addEventListener('change', buildWheel);
+document.getElementById('meal-type').addEventListener('change', () => {
+  buildWheel();
+  document.getElementById('meal-custom').value = currentMeals().join('，');
+});
 
 document.getElementById('spin-btn').addEventListener('click', () => {
   if (spinning) return;
@@ -292,17 +295,22 @@ document.getElementById('spin-btn').addEventListener('click', () => {
   }, 4100);
 });
 
-document.getElementById('meal-custom-save').addEventListener('click', () => {
+document.getElementById('meal-custom-save').addEventListener('click', async () => {
   const raw = document.getElementById('meal-custom').value.trim();
   const type = document.getElementById('meal-type').value;
-  if (!raw) { mealList = DEFAULT_MEALS; }
-  else {
-    const arr = raw.split(/[,，\n]/).map((s) => s.trim()).filter(Boolean);
-    if (arr.length >= 2) mealList = Object.assign({}, mealList, { [type]: arr });
-  }
+  const arr = raw ? raw.split(/[,，\n]/).map((s) => s.trim()).filter(Boolean) : [];
+  const s = await window.api.setMealMenu(type, arr);
+  if (s && s.mealMenus) applyMealMenus(s.mealMenus);
   buildWheel();
   flash(document.getElementById('meal-custom-save'), '已应用');
 });
+
+function applyMealMenus(menus) {
+  mealList = {
+    lunch: (menus && menus.lunch) || DEFAULT_MEALS.lunch,
+    dinner: (menus && menus.dinner) || DEFAULT_MEALS.dinner
+  };
+}
 
 // ---------- 石头剪刀布 ----------
 const RPS = { rock: '✊', scissors: '✌️', paper: '✋' };
@@ -529,6 +537,7 @@ document.getElementById('feed-food-btn').addEventListener('click', async () => {
 
 // ---------- 初始化 ----------
 function renderAll(s) {
+  if (s.mealMenus) applyMealMenus(s.mealMenus);
   renderForm(s.form);
   loadCustomPreview();
   renderWater(s.water);
@@ -546,6 +555,7 @@ async function init() {
   const s = await window.api.getState();
   renderAll(s);
   buildWheel();
+  document.getElementById('meal-custom').value = currentMeals().join('，');
   buildMemory();
   if (s.genJob) setGenStatus(s.genJob); else refreshGenJob();
 }
