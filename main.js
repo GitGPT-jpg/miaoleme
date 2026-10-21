@@ -37,6 +37,7 @@ const { classifyGenError, validateImageBuffer, deriveJobStatus, extractImageBase
 const { createGenJob } = require('./lib/genjob');
 const { clampToArea, isInsideAnyDisplay } = require('./lib/geometry');
 const { restorePomodoro, pomoSnapshot } = require('./lib/pomodoro');
+const { buildBundledSequences, ACTION_META, WALK } = require('./lib/sequences');
 
 function loadState() {
   const res = readState(STORE_FILE);
@@ -120,11 +121,11 @@ function customFrames() {
         if (p && fs.existsSync(p)) { const u = fileToDataUrl(p); if (u) actions[k] = u; }
       });
     }
-    return { idle, idleAlt: idle, walk, walkAlt: walk, happy: idle, actions };
+    return { idle, idleAlt: idle, walk, walkAlt: walk, happy: idle, actions, meta: ACTION_META, sequences: {}, walkSeq: null };
   }
   if (state.customImage && fs.existsSync(state.customImage)) {
     const u = fileToDataUrl(state.customImage);
-    return { idle: u, idleAlt: u, walk: u, walkAlt: u, happy: u, actions: {} };
+    return { idle: u, idleAlt: u, walk: u, walkAlt: u, happy: u, actions: {}, meta: ACTION_META, sequences: {}, walkSeq: null };
   }
   const actions = {};
   Object.keys(BUNDLED_ACTIONS).forEach((k) => {
@@ -133,13 +134,17 @@ function customFrames() {
   });
   const idle = fileToDataUrl(BUNDLED_IDLE);
   const walk = fileToDataUrl(BUNDLED_WALK) || idle;
+  const seq = buildBundledSequences((name) => fileToDataUrl(path.join(__dirname, 'assets', name)));
   return {
     idle,
     idleAlt: fileToDataUrl(BUNDLED_SIT) || idle,
     walk,
     walkAlt: fileToDataUrl(BUNDLED_WALK2) || walk,
     happy: fileToDataUrl(BUNDLED_HAPPY) || idle,
-    actions
+    actions,
+    meta: ACTION_META,
+    sequences: seq.actions,
+    walkSeq: seq.walk
   };
 }
 
@@ -582,7 +587,8 @@ function refreshTrayMenu() {
         { label: '打滚露肚皮', click: () => petWin && petWin.webContents.send('pet-say', { action: 'roll' }) },
         { label: '舔毛', click: () => petWin && petWin.webContents.send('pet-say', { action: 'groom' }) },
         { label: '吃猫粮', click: () => petWin && petWin.webContents.send('pet-say', { action: 'eat' }) },
-        { label: '躺着睡觉', click: () => petWin && petWin.webContents.send('pet-say', { action: 'sleep' }) }
+        { label: '躺着睡觉', click: () => petWin && petWin.webContents.send('pet-say', { action: 'sleep' }) },
+        { label: '伸个懒腰', click: () => petWin && petWin.webContents.send('pet-say', { action: 'stretch' }) }
       ]
     },
     { label: '💧 喝水打卡', click: () => { state.stats.waterDone += 1; state.water.lastRemindTs = Date.now(); saveState(); petSay('咕噜咕噜~ 谢谢主人！', 'happy'); } },
@@ -1171,7 +1177,7 @@ on('save-win-pos', (e, x, y) => {
 
 on('pet-say', (e, msg) => petSay(msg.text, msg.mood, true));
 on('trigger-action', (e, name) => {
-  const allowed = ['roll', 'groom', 'eat', 'sleep', 'drink'];
+  const allowed = ['roll', 'groom', 'eat', 'sleep', 'drink', 'stretch'];
   if (!allowed.includes(name)) return;
   if (petWin) petWin.webContents.send('pet-say', { action: name });
 });

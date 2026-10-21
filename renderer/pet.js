@@ -25,9 +25,10 @@ const ACTIONS = {
   groom: { label: '舔舔毛，保持美丽~', ms: 4000 },
   eat:   { label: '干饭时间到！🍚', ms: 4500 },
   sleep: { label: '有点困了…睡会儿 💤', ms: 7000 },
-  drink: { label: '咕噜咕噜~ 好喝！', ms: 3200 }
+  drink: { label: '咕噜咕噜~ 好喝！', ms: 3300 },
+  stretch: { label: '伸个懒腰~', ms: 3200 }
 };
-const ACT_CLASSES = ['act-roll', 'act-groom', 'act-eat', 'act-sleep', 'act-drink'];
+const ACT_CLASSES = ['act-roll', 'act-groom', 'act-eat', 'act-sleep', 'act-drink', 'act-stretch'];
 
 // ---------- 行为状态（单一所有权：drag > act > walk > idle） ----------
 // mode 是唯一的移动/动作控制权；session 用于让过期的异步回调失效
@@ -71,7 +72,7 @@ function applyForm(form) {
 }
 
 // ---------- 帧集合与双层交叉淡化（最新目标必胜） ----------
-let F = { idle: [], walk: [], happy: null, actions: {} };
+let F = { idle: [], walk: [], happy: null, actions: {}, meta: {}, sequences: {}, walkSeq: null };
 let visLayer = 'a';
 let activeUrl = null;
 let fading = false;
@@ -122,7 +123,10 @@ function loadCustomImage() {
       idle: [frames.idle, frames.idleAlt || frames.idle],
       walk: [frames.walk || frames.idle, frames.walkAlt || frames.walk || frames.idle],
       happy: frames.happy || frames.idle,
-      actions: frames.actions || {}
+      actions: frames.actions || {},
+      meta: frames.meta || {},
+      sequences: frames.sequences || {},
+      walkSeq: frames.walkSeq || null
     };
     if (F.idle[0]) {
       photoA.src = F.idle[0];
@@ -302,13 +306,16 @@ function setWalkFrame(on) {
   walkTimer = null;
   if (on) {
     pet.classList.add('walking');
+    const seq = (F.walkSeq && F.walkSeq.frames && F.walkSeq.frames.length > 1) ? F.walkSeq.frames : F.walk;
+    const frameMs = (F.walkSeq && F.walkSeq.frameMs) || 260;
+    const fadeMs = (F.walkSeq && F.walkSeq.fadeMs) || 140;
     let tick = 0;
-    if (F.walk.length) crossfadeTo(F.walk[0], 160);
+    if (seq.length) crossfadeTo(seq[0], fadeMs);
     walkTimer = setInterval(() => {
-      if (F.walk.length < 2) return;
-      tick = (tick + 1) % 2;
-      crossfadeTo(F.walk[tick], 160);
-    }, 280);
+      if (seq.length < 2) return;
+      tick = (tick + 1) % seq.length;
+      crossfadeTo(seq[tick], fadeMs);
+    }, frameMs);
   } else {
     pet.classList.remove('walking');
   }
@@ -316,20 +323,23 @@ function setWalkFrame(on) {
 
 function playAction(name) {
   const act = ACTIONS[name];
-  const url = F.actions && F.actions[name];
+  const seq = F.sequences && F.sequences[name];
+  const url = (F.actions && F.actions[name]) || (seq && seq.frames && seq.frames[0]);
   if (!act || !url || currentForm !== 'custom' || mode === 'drag') return;
   const mySession = bumpSession();   // 任何新动作使旧的结束回调失效
   clearBehaviorTimers();
   mode = 'act';
   pet.classList.remove('walking', 'face-left', ...ACT_CLASSES);
   pet.classList.add('acting', 'act-' + name);
-  crossfadeTo(url, 400);
-  if (name === 'sleep' && F.actions.sleep2) {
+  if (seq && seq.frames && seq.frames.length > 1) {
     let tick = 0;
+    crossfadeTo(seq.frames[0], seq.fadeMs || 220);
     sleepCycleTimer = setInterval(() => {
-      tick = (tick + 1) % 2;
-      crossfadeTo(tick ? F.actions.sleep2 : F.actions.sleep, 900);
-    }, 2200);
+      tick = (tick + 1) % seq.frames.length;
+      crossfadeTo(seq.frames[tick], seq.fadeMs || 220);
+    }, seq.frameMs || 700);
+  } else {
+    crossfadeTo(url, 400);
   }
   say(act.label, name === 'sleep' ? 'normal' : 'happy');
   actTimer = setTimeout(() => {
@@ -347,7 +357,7 @@ function scheduleWander() {
 
 async function startWander() {
   if (currentForm !== 'custom' || mode !== 'idle') { scheduleWander(); return; }
-  const names = Object.keys(F.actions || {}).filter((n) => n !== 'sleep2');
+  const names = Object.keys(ACTIONS).filter((n) => (F.sequences && F.sequences[n]) || (F.actions && F.actions[n]));
   if (names.length && Math.random() < 0.5) {
     playAction(names[Math.floor(Math.random() * names.length)]);
     return;
