@@ -473,6 +473,10 @@ document.getElementById('autolaunch').addEventListener('change', async (e) => {
   await window.api.setAutoLaunch(e.target.checked);
 });
 document.getElementById('demo-start').addEventListener('click', () => window.api.startDemo());
+document.getElementById('display-mode').addEventListener('change', async (e) => {
+  await window.api.setDisplayMode(e.target.value);
+});
+document.getElementById('display-mode').value = 'photo';
 document.getElementById('quiet-mode').addEventListener('change', async (e) => {
   await window.api.setQuiet(e.target.checked);
 });
@@ -606,6 +610,7 @@ function renderAll(s) {
   if (s.pomodoro) { setIfIdle(pomoWork, s.pomodoro.workMin); setIfIdle(pomoBreak, s.pomodoro.breakMin); }
   document.getElementById('autolaunch').checked = !!s.autoLaunch;
   document.getElementById('quiet-mode').checked = !!s.quiet;
+  document.getElementById('display-mode').value = s.displayMode === 'rig' ? 'rig' : 'photo';
   renderMeetings(s.meetings);
   renderDdls(s.ddls);
 }

@@ -68,6 +68,23 @@ html, body {
   transition: opacity 0.45s ease, filter 0.45s ease;
 }
 .pet-photo-b { opacity: 0; }
+/* 未生成形象时用原图：圆角卡片，避免生硬矩形 */
+#pet.raw-photo .pet-photo-img {
+  border-radius: 18px;
+  border: 2px solid rgba(255,255,255,0.9);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+  object-fit: cover;
+  width: 118px;
+  height: 118px;
+}
+
+/* 写实展示：极轻微呼吸，不做夸张动作 */
+#pet.photo-real .pet-photo-img { animation: realBreath 4.2s ease-in-out infinite; }
+@keyframes realBreath {
+  0%, 100% { transform: translateY(0) scale(1, 1) rotate(0deg); }
+  50%      { transform: translateY(-2px) scale(1.012, 0.995) rotate(-0.4deg); }
+}
+
 .rig-canvas {
   position: absolute;
   bottom: 0;
@@ -75,7 +92,24 @@ html, body {
   height: 160px;
   display: none;
 }
-#pet.rig-on .rig-canvas { display: block; }
+#pet.rig-on /* 未生成形象时用原图：圆角卡片，避免生硬矩形 */
+#pet.raw-photo .pet-photo-img {
+  border-radius: 18px;
+  border: 2px solid rgba(255,255,255,0.9);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+  object-fit: cover;
+  width: 118px;
+  height: 118px;
+}
+
+/* 写实展示：极轻微呼吸，不做夸张动作 */
+#pet.photo-real .pet-photo-img { animation: realBreath 4.2s ease-in-out infinite; }
+@keyframes realBreath {
+  0%, 100% { transform: translateY(0) scale(1, 1) rotate(0deg); }
+  50%      { transform: translateY(-2px) scale(1.012, 0.995) rotate(-0.4deg); }
+}
+
+.rig-canvas { display: block; }
 #pet.rig-on .pet-photo-img { display: none; }
 /* 朝向翻转 */
 #pet.face-left .pet-photo-img { transform: scaleX(-1); }
@@ -281,6 +315,23 @@ html, body {
   transition: opacity 0.45s ease, filter 0.45s ease;
 }
 .pet-photo-b { opacity: 0; }
+/* 未生成形象时用原图：圆角卡片，避免生硬矩形 */
+#pet.raw-photo .pet-photo-img {
+  border-radius: 18px;
+  border: 2px solid rgba(255,255,255,0.9);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+  object-fit: cover;
+  width: 118px;
+  height: 118px;
+}
+
+/* 写实展示：极轻微呼吸，不做夸张动作 */
+#pet.photo-real .pet-photo-img { animation: realBreath 4.2s ease-in-out infinite; }
+@keyframes realBreath {
+  0%, 100% { transform: translateY(0) scale(1, 1) rotate(0deg); }
+  50%      { transform: translateY(-2px) scale(1.012, 0.995) rotate(-0.4deg); }
+}
+
 .rig-canvas {
   position: absolute;
   bottom: 0;
@@ -288,7 +339,24 @@ html, body {
   height: 160px;
   display: none;
 }
-#pet.rig-on .rig-canvas { display: block; }
+#pet.rig-on /* 未生成形象时用原图：圆角卡片，避免生硬矩形 */
+#pet.raw-photo .pet-photo-img {
+  border-radius: 18px;
+  border: 2px solid rgba(255,255,255,0.9);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+  object-fit: cover;
+  width: 118px;
+  height: 118px;
+}
+
+/* 写实展示：极轻微呼吸，不做夸张动作 */
+#pet.photo-real .pet-photo-img { animation: realBreath 4.2s ease-in-out infinite; }
+@keyframes realBreath {
+  0%, 100% { transform: translateY(0) scale(1, 1) rotate(0deg); }
+  50%      { transform: translateY(-2px) scale(1.012, 0.995) rotate(-0.4deg); }
+}
+
+.rig-canvas { display: block; }
 #pet.rig-on .pet-photo-img { display: none; }
 /* 朝向翻转 */
 #pet.face-left .pet-photo-img { transform: scaleX(-1); }

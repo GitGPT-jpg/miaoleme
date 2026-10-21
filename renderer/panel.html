@@ -43,7 +43,7 @@
         </div>
         <div class="upload-row">
           <img id="custom-preview" class="custom-preview" alt="" />
-          <button id="upload-img">上传我的图片</button>
+          <button id="upload-img">上传我的图片（可多选，最多 6 张）</button>
         </div>
         <p id="gen-status" class="gen-status"></p>
         <div id="gen-progress" class="gen-progress"><div id="gen-progress-fill"></div></div>
@@ -237,6 +237,12 @@
         <label class="row"><input type="checkbox" id="autolaunch" /><span>开机自动启动</span></label>
         <label class="row"><input type="checkbox" id="theme-dark" /><span>深色模式</span></label>
         <label class="row"><input type="checkbox" id="quiet-mode" /><span>安静模式（自动气泡与闲聊静默，手动操作仍有反馈）</span></label>
+        <label class="row"><span>形象展示</span>
+          <select id="display-mode">
+            <option value="photo">写实（推荐，多照片生成的最逼真形象）</option>
+            <option value="rig">骨骼动画（可眨眼/摆尾/跟随鼠标）</option>
+          </select>
+        </label>
         <p class="hint">全局快捷键 ⌘/Ctrl + ⇧ + P 可随时呼出/隐藏本控制台。关闭窗口不会退出，程序常驻在菜单栏托盘。</p>
       </div>
       <div class="card">

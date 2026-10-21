@@ -32,6 +32,7 @@ const ACT_CLASSES = ['act-roll', 'act-groom', 'act-eat', 'act-sleep', 'act-drink
 // ---------- 行为状态（单一所有权：drag > act > walk > idle） ----------
 // mode 是唯一的移动/动作控制权；session 用于让过期的异步回调失效
 let currentForm = 'custom';
+let displayMode = 'photo';
 let mode = 'idle';
 let session = 0;
 let bubbleTimer = null;
@@ -71,7 +72,8 @@ function applyForm(form) {
   pet.className = `form-${form} mood-normal`;
   if (form === 'custom') {
     loadCustomImage();
-    loadRig();
+    if (displayMode === 'rig') loadRig();
+    else { disableRig(); pet.classList.add('photo-real'); }
   } else if (MOOD_FACE[form]) {
     face.textContent = MOOD_FACE[form].normal;
   }
@@ -125,6 +127,7 @@ function loadCustomImage() {
   const mySession = session;
   window.api.getCustomFrames().then((frames) => {
     if (!frames || mySession !== session) return; // 形态/图片已切换，丢弃过期结果
+    pet.classList.toggle('raw-photo', !frames.generated);
     F = {
       idle: [frames.idle, frames.idleAlt || frames.idle],
       walk: [frames.walk || frames.idle, frames.walkAlt || frames.walk || frames.idle],
@@ -213,6 +216,7 @@ function loadRig() {
 }
 
 function enableRig() {
+  if (displayMode === 'photo') return;
   console.log('[rig] enabled');
   rigOn = true;
   pet.classList.add('rig-on');
@@ -253,6 +257,17 @@ let lastRigT = 0;
 let tailSpring = { x: 0.32, v: 0 };
 let saccade = { until: 0, nextAt: 0, dx: 0, dy: 0 };
 let gazeTarget = { x: 0, y: 0 };
+
+window.api.onDisplayModeChanged((m) => {
+  displayMode = m === 'rig' ? 'rig' : 'photo';
+  if (displayMode === 'rig') {
+    pet.classList.remove('photo-real');
+    loadRig();
+  } else {
+    disableRig();
+    pet.classList.add('photo-real');
+  }
+});
 
 window.api.onCursor((p) => {
   gazeTarget = GazeMath.gazeFromOffset(p.x, p.y, 600);
@@ -514,7 +529,7 @@ function scheduleWander() {
 
 async function startWander() {
   if (currentForm !== 'custom' || mode !== 'idle') { scheduleWander(); return; }
-  const names = Object.keys(ACTIONS).filter((n) => (F.sequences && F.sequences[n]) || (F.actions && F.actions[n]));
+  const names = displayMode === 'photo' ? [] : Object.keys(ACTIONS).filter((n) => (F.sequences && F.sequences[n]) || (F.actions && F.actions[n]));
   if (names.length && Math.random() < 0.5) {
     playAction(names[Math.floor(Math.random() * names.length)]);
     return;
@@ -581,6 +596,7 @@ window.api.onRigRefresh(() => loadRig());
 // 初始化
 window.api.getState().then((s) => {
   quiet = !!s.quiet;
+  displayMode = s.displayMode === 'rig' ? 'rig' : 'photo';
   applyForm(s.form || 'custom');
   renderFeedBadge(s.feed);
 });

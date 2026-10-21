@@ -130,11 +130,11 @@ function customFrames() {
         if (p && fs.existsSync(p)) { const u = fileToDataUrl(p); if (u) actions[k] = u; }
       });
     }
-    return { idle, idleAlt: idle, walk, walkAlt: walk, happy: idle, actions, meta: ACTION_META, sequences: {}, walkSeq: null };
+    return { idle, idleAlt: idle, walk, walkAlt: walk, happy: idle, actions, meta: ACTION_META, sequences: {}, walkSeq: null, generated: true };
   }
   if (state.customImage && fs.existsSync(state.customImage)) {
     const u = fileToDataUrl(state.customImage);
-    return { idle: u, idleAlt: u, walk: u, walkAlt: u, happy: u, actions: {}, meta: ACTION_META, sequences: {}, walkSeq: null };
+    return { idle: u, idleAlt: u, walk: u, walkAlt: u, happy: u, actions: {}, meta: ACTION_META, sequences: {}, walkSeq: null, generated: false };
   }
   const actions = {};
   Object.keys(BUNDLED_ACTIONS).forEach((k) => {
@@ -256,7 +256,7 @@ const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // 调用图像生成服务，把 srcPath 按给定提示词转成一帧。
 // 返回 { ok:true, path } 或 { ok:false, error }；瞬时错误最多额外重试 2 次（退避）。
-async function genAvatarFrame(srcPath, poseName, prompt) {
+async function genAvatarFrame(srcPath, poseName, prompt, refs) {
   const cfg = loadGenConfig();
   if (!cfg) return { ok: false, error: 'unavailable' };
 
@@ -270,12 +270,13 @@ async function genAvatarFrame(srcPath, poseName, prompt) {
       return { ok: false, error: 'insecure_url' };
     }
     if (cfg.provider === 'comate' && cfg.comate && cfg.comate.apiUrl) {
-      const b64 = fs.readFileSync(srcPath).toString('base64');
+      const list = (Array.isArray(refs) && refs.length ? refs : [srcPath]).slice(0, 4);
+      const parts = list.map((p) => ({
+        inline_data: { mime_type: mimeOf(p), data: fs.readFileSync(p).toString('base64') }
+      }));
+      parts.push({ text: (list.length > 1 ? 'Use these reference photos of the SAME cat to keep identity consistent. ' : '') + prompt });
       resp = await httpsJson(cfg.comate.apiUrl, { 'login-name': cfg.comate.loginName || '' }, {
-        contents: [{ role: 'USER', parts: [
-          { inline_data: { mime_type: mimeOf(srcPath), data: b64 } },
-          { text: prompt }
-        ] }],
+        contents: [{ role: 'USER', parts }],
         resolution: '2K',
         aspectRatio: '1:1'
       });
@@ -424,6 +425,7 @@ function persistGenJob() {
 
 function applyFrameToState(key, filePath) {
   if (key.startsWith('rig-')) {
+    if (key === 'rig-body') state.rigSourceImage = path.basename(state.customImage || '');
     const target = rigFilePath(app.getPath('userData'), key);
     if (target) {
       try { fs.copyFileSync(filePath, target); fs.chmodSync(target, 0o600); } catch (e) { /* ignore */ }
@@ -452,7 +454,7 @@ function makeEmptySnapshot(jobId, sourceId, status, total, errorCode) {
 }
 
 // 启动生成任务。only 指定本次要补的姿势（重试失败项用）
-function startGenJob(sourcePath, sourceId, only) {
+function startGenJob(sourcePath, sourceId, only, refs) {
   const want = (k) => !only || only.includes(k);
   const has = (k) => {
     if (k.startsWith('rig-')) return false;   // 骨骼部件随新照片重新生成
@@ -486,7 +488,7 @@ function startGenJob(sourcePath, sourceId, only) {
     jobId,
     sourceId: sid,
     tasks,
-    genFrame: (t) => genAvatarFrame(sourcePath, t.key, t.prompt),
+    genFrame: (t) => genAvatarFrame(sourcePath, t.key, t.prompt, refs || state.customImages),
     applyFrame: (key, filePath) => {
       if (genJob !== runner.job) return;   // 旧任务不得写状态
       applyFrameToState(key, filePath);
@@ -967,6 +969,7 @@ function publicState() {
     pomodoro: state.pomodoro,
     dnd: state.dnd,
     theme: state.theme,
+    displayMode: state.displayMode,
     autoLaunch: state.autoLaunch,
     quiet: state.quiet,
     stats: state.stats,
@@ -1072,7 +1075,8 @@ function rigPartPaths() {
 
 handle('get-rig-parts', () => {
   const dir = app.getPath('userData');
-  const customCore = coreRigPresent(dir, (f) => fs.existsSync(f));
+  const rigSourceOk = !!state.customImage && state.rigSourceImage === path.basename(state.customImage);
+  const customCore = rigSourceOk && coreRigPresent(dir, (f) => fs.existsSync(f));
   const paths = customCore
     ? ['pet-rig-body.png', 'pet-rig-head.png', 'pet-rig-tail.png'].map((f) => path.join(dir, f))
     : (!state.customImage && [RIG_PARTS_BODY, RIG_PARTS_HEAD, RIG_PARTS_TAIL].every((f) => fs.existsSync(f))
@@ -1099,7 +1103,7 @@ handle('get-custom-frames', () => customFrames());
 handle('upload-custom-image', async () => {
   const res = await dialog.showOpenDialog({
     title: '选择桌宠图片',
-    properties: ['openFile'],
+    properties: ['openFile', 'multiSelections'],
     filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }]
   });
   if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false };
@@ -1130,6 +1134,8 @@ handle('upload-custom-image', async () => {
       try { fs.rmSync(path.join(app.getPath('userData'), p.file), { force: true }); } catch (e) { /* ignore */ }
     }
     state.customImage = dest;
+    state.customImages = refs;
+    state.rigSourceImage = '';
     state.customGenIdle = null;     // 清除上一次生成的 3D 帧，待重新生成
     state.customGenWalk = null;
     state.customGenActions = null;
@@ -1140,7 +1146,7 @@ handle('upload-custom-image', async () => {
     if (petWin) { petWin.webContents.send('form-changed', 'custom'); petWin.webContents.send('custom-image-changed', url); }
     if (panelWin) panelWin.webContents.send('state-updated', publicState());
     // 后台异步生成 3D 形象（不阻塞上传返回；先用原图占位，生成完自动替换）
-    startGenJob(dest, jobId, null);
+    startGenJob(dest, jobId, null, refs);
     return { ok: true, dataUrl: url, generating: genAvailable(), jobId };
   } catch (err) {
     return { ok: false, error: String(err) };
@@ -1385,6 +1391,14 @@ handle('set-meal-menu', (e, slot, items) => {
   const arr = Array.isArray(items) ? items.filter((x) => typeof x === 'string').map((x) => x.trim().slice(0, 20)).filter(Boolean).slice(0, 12) : [];
   state.mealMenus[slot] = arr.length >= 2 ? arr : null;
   saveState();
+  return publicState();
+});
+
+// 展示模式：写实 / 骨骼
+handle('set-display-mode', (e, mode) => {
+  state.displayMode = mode === 'rig' ? 'rig' : 'photo';
+  saveState();
+  if (petWin) petWin.webContents.send('display-mode-changed', state.displayMode);
   return publicState();
 });
 
