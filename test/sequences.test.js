@@ -14,15 +14,15 @@ test('动作元数据合法：时长/帧时长/过渡时长', () => {
 test('内置序列：每帧都取到 dataURL，缺帧自动跳过', () => {
   const url = (f) => 'data:' + f;
   const seq = buildBundledSequences(url);
-  assert.equal(seq.walk.frames.length, 3, '走路三帧');
-  assert.equal(seq.actions.roll.frames.length, 4, '打滚四帧');
-  assert.equal(seq.actions.groom.frames.length, 3);
-  assert.equal(seq.actions.eat.frames.length, 3);
-  assert.equal(seq.actions.drink.frames.length, 3);
+  assert.equal(seq.walk.frames.length, 4, '走路四帧');
+  assert.equal(seq.actions.roll.frames.length, 5, '打滚五帧');
+  assert.equal(seq.actions.groom.frames.length, 4);
+  assert.equal(seq.actions.eat.frames.length, 4);
+  assert.equal(seq.actions.drink.frames.length, 4);
   assert.equal(seq.actions.sleep.frames.length, 2);
-  assert.equal(seq.actions.stretch.frames.length, 2);
+  assert.equal(seq.actions.stretch.frames.length, 3);
   const partial = buildBundledSequences((f) => (f === 'act-roll-3.png' ? null : 'x:' + f));
-  assert.equal(partial.actions.roll.frames.length, 3, '缺失帧被跳过');
+  assert.equal(partial.actions.roll.frames.length, 4, '缺失帧被跳过');
 });
 
 test('frameIndices：循环播放且数量与总时长匹配', () => {
