@@ -905,42 +905,30 @@ function publicState() {
 // ---------- 喂养领域函数（托盘 / IPC / 面板统一入口） ----------
 function feedWater() {
   const now = Date.now();
-  state.feed.waterRequest = false;
-  state.feed.waterNagTs = 0;
-  state.water.lastRemindTs = now;
-  state.stats.waterDone += 1;
-  state.stats.intimacy += 1;
+  const r = feedDomain.feedWater(state, now);
   saveState();
   broadcastFeedState();
-  if (petWin) petWin.webContents.send('pet-say', { action: 'drink', text: '咕噜咕噜~ 猫咪喝饱啦，主人也喝水了吗？', mood: 'happy' });  // 用户主动操作，安静模式下也反馈
+  if (petWin) petWin.webContents.send('pet-say', { action: 'drink', text: '咕噜咕噜~ 猫咪喝饱啦，主人也喝水了吗？', mood: 'happy' });
   notify('💧 喂水完成', '猫咪喝饱啦，主人也记得喝水~');
+  return r;
 }
 
 function feedFood() {
   const now = Date.now();
-  const plan = feedPlan(state.feed, now);
-  const slot = plan.slot;
-  state.feed.mealRequest = false;
-  state.feed.mealNagTs = 0;
-  state.feed.mealSlot = null;
-  state.feed.mealRequestDate = '';
-  if (plan.markFed) {
-    // 只把被喂的那一餐记为已喂，晚餐仍会正常触发
-    state.feed.lastMealFed[slot] = dateKey(now);
-  }
-  // 只有真正响应了讨粮请求才加亲密度，避免反复点击刷分
-  if (plan.awardIntimacy) state.stats.intimacy += 2;
+  const r = feedDomain.feedFood(state, now);
   saveState();
   broadcastFeedState();
-  if (petWin) petWin.webContents.send('pet-say', { action: 'eat', text: '猫粮好吃~ 主人也要好好吃饭哦！', mood: 'happy' });
-  notify('🍚 喂饭完成', '猫咪吃饱啦，主人也别忘了自己的饭~');
+  if (r.fed) {
+    if (petWin) petWin.webContents.send('pet-say', { action: 'eat', text: '猫粮好吃~ 主人也要好好吃饭哦！', mood: 'happy' });
+    notify('🍚 喂饭完成', '猫咪吃饱啦，主人也别忘了自己的饭~');
+  } else {
+    petSay('现在不是饭点，猫咪还不饿哦~', 'normal', true);
+  }
+  return r;
 }
 
 function drinkCheckin() {
-  state.stats.waterDone += 1;
-  state.water.lastRemindTs = Date.now();
-  state.feed.waterRequest = false;
-  state.feed.waterNagTs = 0;
+  feedDomain.drinkCheckin(state, Date.now());
   saveState();
   broadcastFeedState();
   petSay('咕噜咕噜~ 谢谢主人！', 'happy', true);
@@ -1206,7 +1194,7 @@ handle('drink-water', () => drinkCheckin());
 
 // 喂水 / 喂猫粮 / 稍后提醒：统一走领域函数
 handle('feed-water', () => { feedWater(); return publicState(); });
-handle('feed-food', () => { feedFood(); return publicState(); });
+handle('feed-food', () => { const r = feedFood(); return Object.assign({ ok: true }, r, { state: publicState() }); });
 on('snooze', (e, minutes) => { snoozeAll(minutes); });
 
 // 小游戏战绩（只接受 0/1 的增量）
