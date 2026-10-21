@@ -165,6 +165,17 @@ const GEN_ACTION_PROMPTS = {
   sleep: 'Turn the subject in this photo into an adorable chibi 3D mascot, Pixar/Blender style, keep key colors and features. Pose: lying down curled up sleeping, eyes closed peacefully, small white Zzz symbols floating above head. Isolated on a FULLY TRANSPARENT background, PNG, centered, no ground, no baked shadow.'
 };
 
+function genConfigPath() {
+  return path.join(app.getPath('userData'), 'generation.config.json');
+}
+
+function writeGenConfigFile(cfg) {
+  const file = genConfigPath();
+  fs.writeFileSync(file, JSON.stringify(cfg, null, 2), { encoding: 'utf-8', mode: 0o600 });
+  try { fs.chmodSync(file, 0o600); } catch (e) { /* ignore */ }
+  return file;
+}
+
 function loadGenConfig() {
   // 优先读取用户数据目录（打包版可用），其次项目目录（开发版）
   const candidates = [
@@ -1059,6 +1070,75 @@ handle('upload-custom-image', async () => {
 
 // 生成任务查询 / 取消 / 重试失败项
 handle('get-gen-job', () => jobSnapshot(genJob) || state.genJob);
+
+// ---------- 生成服务配置（应用内可配置，凭据写入用户目录 0600） ----------
+handle('get-gen-config', () => {
+  const cfg = loadGenConfig() || {};
+  return {
+    available: genAvailable(),
+    provider: cfg.provider === 'qianfan' ? 'qianfan' : 'comate',
+    comate: {
+      apiUrl: (cfg.comate && cfg.comate.apiUrl) || '',
+      loginName: (cfg.comate && cfg.comate.loginName) || ''
+    },
+    qianfan: {
+      apiUrl: (cfg.qianfan && cfg.qianfan.apiUrl) || 'https://qianfan.baidubce.com/v2/images/generations',
+      model: (cfg.qianfan && cfg.qianfan.model) || 'ernie-image-turbo',
+      hasKey: !!(cfg.qianfan && cfg.qianfan.apiKey)
+    },
+    path: genConfigPath()
+  };
+});
+
+handle('save-gen-config', (e, payload) => {
+  const c = payload || {};
+  const https = (u) => typeof u === 'string' && /^https:\/\//i.test(u);
+  const provider = c.provider === 'qianfan' ? 'qianfan' : 'comate';
+  const current = loadGenConfig() || {};
+  const next = { provider };
+  if (provider === 'comate') {
+    if (!https(c.comate && c.comate.apiUrl)) return { ok: false, error: 'api_url_must_be_https' };
+    next.comate = {
+      apiUrl: String(c.comate.apiUrl).slice(0, 500),
+      loginName: String((c.comate && c.comate.loginName) || '').slice(0, 200)
+    };
+  } else {
+    if (!https(c.qianfan && c.qianfan.apiUrl)) return { ok: false, error: 'api_url_must_be_https' };
+    const key = (c.qianfan && c.qianfan.apiKey) || (current.qianfan && current.qianfan.apiKey) || '';
+    if (!key) return { ok: false, error: 'api_key_required' };
+    next.qianfan = {
+      apiUrl: String(c.qianfan.apiUrl).slice(0, 500),
+      model: String((c.qianfan && c.qianfan.model) || 'ernie-image-turbo').slice(0, 80),
+      apiKey: String(key).slice(0, 500)
+    };
+  }
+  try {
+    writeGenConfigFile(next);
+    return { ok: true, available: genAvailable() };
+  } catch (err) {
+    return { ok: false, error: 'write_failed' };
+  }
+});
+
+// 连通性诊断：只做 HEAD/OPTIONS，不发起计费生成
+handle('test-gen-config', async () => {
+  const cfg = loadGenConfig();
+  if (!cfg) return { ok: false, error: 'not_configured' };
+  const url = cfg.provider === 'qianfan' ? (cfg.qianfan && cfg.qianfan.apiUrl) : (cfg.comate && cfg.comate.apiUrl);
+  if (!url || !/^https:\/\//i.test(url)) return { ok: false, error: 'insecure_url' };
+  return new Promise((resolve) => {
+    const { request } = require('https');
+    const req = request(url, { method: 'HEAD', timeout: 8000 }, (res) => {
+      res.resume();
+      // 401/403 说明地址可达但需鉴权；2xx/405 说明可达
+      if (res.statusCode === 401 || res.statusCode === 403) resolve({ ok: false, error: 'auth_failed', status: res.statusCode });
+      else resolve({ ok: true, status: res.statusCode });
+    });
+    req.on('timeout', () => { req.destroy(); resolve({ ok: false, error: 'timeout' }); });
+    req.on('error', () => resolve({ ok: false, error: 'network_error' }));
+    req.end();
+  });
+});
 handle('cancel-gen', () => { cancelGenJob(); return jobSnapshot(genJob); });
 handle('retry-gen', () => {
   const src = state.customImage;

@@ -67,6 +67,8 @@ function showGenActions(cancel, retry) {
   genActionsEl.style.display = (cancel || retry) ? 'flex' : 'none';
   genCancelBtn.style.display = cancel ? '' : 'none';
   genRetryBtn.style.display = retry ? '' : 'none';
+  const goto = document.getElementById('gen-goto-config');
+  if (goto) goto.style.display = retry ? '' : 'none';
 }
 
 function setGenStatus(s) {
@@ -113,7 +115,7 @@ function setGenStatus(s) {
     showGenActions(false, true);
   } else if (st === 'unavailable') {
     genStatusEl.classList.add('err');
-    genStatusEl.textContent = '⚠️ 未配置生成服务，当前使用原图；参考 generation.config.example.json 配置后重试';
+    genStatusEl.textContent = '⚠️ 未配置生成服务，当前使用原图；点「去配置生成服务」填写后即可自动生成';
     genProgEl.classList.remove('show');
   }
 }
@@ -121,6 +123,10 @@ window.api.onGenStatus((s) => setGenStatus(s));
 
 document.getElementById('gen-cancel').addEventListener('click', async () => {
   await window.api.cancelGen();
+});
+document.getElementById('gen-goto-config').addEventListener('click', () => {
+  document.querySelector('.tab[data-tab="setting"]').click();
+  window.scrollTo(0, 0);
 });
 document.getElementById('gen-retry').addEventListener('click', async () => {
   const r = await window.api.retryGen();
@@ -606,3 +612,81 @@ window.api.onStateUpdated((s) => renderAll(s));
 init();
 
 
+
+
+// ---------- 图像生成服务配置 ----------
+const genProvider = document.getElementById('gen-provider');
+const genComateFields = document.getElementById('gen-comate-fields');
+const genQianfanFields = document.getElementById('gen-qianfan-fields');
+const genConfigMsg = document.getElementById('gen-config-msg');
+const genConfigState = document.getElementById('gen-config-state');
+
+function toggleGenProvider() {
+  const isQ = genProvider.value === 'qianfan';
+  genComateFields.style.display = isQ ? 'none' : '';
+  genQianfanFields.style.display = isQ ? '' : 'none';
+}
+genProvider.addEventListener('change', toggleGenProvider);
+
+async function loadGenConfig() {
+  const c = await window.api.getGenConfig();
+  genProvider.value = c.provider || 'comate';
+  document.getElementById('gen-comate-url').value = c.comate.apiUrl || '';
+  document.getElementById('gen-comate-login').value = c.comate.loginName || '';
+  document.getElementById('gen-qianfan-url').value = c.qianfan.apiUrl || '';
+  document.getElementById('gen-qianfan-model').value = c.qianfan.model || '';
+  document.getElementById('gen-qianfan-key').value = '';
+  genConfigState.textContent = c.available ? '✅ 已配置' : '⚠️ 未配置（上传只显示原图）';
+  toggleGenProvider();
+}
+document.getElementById('gen-save').addEventListener('click', async () => {
+  const provider = genProvider.value;
+  const payload = { provider };
+  if (provider === 'comate') {
+    payload.comate = {
+      apiUrl: document.getElementById('gen-comate-url').value.trim(),
+      loginName: document.getElementById('gen-comate-login').value.trim()
+    };
+  } else {
+    payload.qianfan = {
+      apiUrl: document.getElementById('gen-qianfan-url').value.trim(),
+      model: document.getElementById('gen-qianfan-model').value.trim(),
+      apiKey: document.getElementById('gen-qianfan-key').value.trim()
+    };
+  }
+  const r = await window.api.saveGenConfig(payload);
+  if (r && r.ok) {
+    genConfigMsg.className = 'gen-status ok';
+    genConfigMsg.textContent = '✅ 已保存，可用「测试连接」验证';
+    genConfigState.textContent = r.available ? '✅ 已配置' : '⚠️ 仍不可用';
+    document.getElementById('gen-qianfan-key').value = '';
+  } else {
+    genConfigMsg.className = 'gen-status err';
+    const map = {
+      api_url_must_be_https: '接口地址必须以 https:// 开头',
+      api_key_required: '请填写 API Key',
+      write_failed: '写入配置失败，请检查磁盘权限'
+    };
+    genConfigMsg.textContent = '⚠️ ' + (map[r && r.error] || '保存失败');
+  }
+});
+document.getElementById('gen-test').addEventListener('click', async () => {
+  genConfigMsg.className = 'gen-status busy';
+  genConfigMsg.textContent = '正在测试连接…';
+  const r = await window.api.testGenConfig();
+  const map = {
+    not_configured: '尚未配置生成服务',
+    insecure_url: '接口地址必须为 https',
+    auth_failed: '地址可达，但鉴权失败（检查 login-name / API Key）',
+    timeout: '连接超时，请检查网络或地址',
+    network_error: '网络不可达'
+  };
+  if (r && r.ok) {
+    genConfigMsg.className = 'gen-status ok';
+    genConfigMsg.textContent = `✅ 地址可达（HTTP ${r.status}）`;
+  } else {
+    genConfigMsg.className = 'gen-status err';
+    genConfigMsg.textContent = '⚠️ ' + (map[r && r.error] || '测试失败');
+  }
+});
+loadGenConfig();

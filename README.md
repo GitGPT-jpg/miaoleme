@@ -64,7 +64,11 @@ npm run pack        # 免安装目录版
 
 ## 🔧 图像生成配置
 
-上传照片后的 3D 生成支持两种服务商。复制 `generation.config.example.json` 为 `generation.config.json` 并填入自己的凭据（该文件已被 `.gitignore` 忽略，不会进入仓库或安装包）：
+**推荐：应用内配置。** 打开控制台 →「设置」→「图像生成服务」，选择服务商、填写接口地址与身份信息，点「保存配置」→「测试连接」。配置写入本机用户目录（文件权限 600），不会进入安装包、不会写入日志。
+
+> 注意：未配置生成服务时，上传照片**只会显示原图**、不会生成 3D 形象——这是 Windows 分发版首次上手最常见的原因。
+
+也可以手动创建配置文件（开发用）：复制 `generation.config.example.json` 为 `generation.config.json` 并填入凭据（`.gitignore` 已忽略）：
 
 ```json
 {

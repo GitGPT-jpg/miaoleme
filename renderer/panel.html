@@ -50,6 +50,7 @@
         <div id="gen-actions" class="add-row" style="display:none; margin-top:8px">
           <button id="gen-cancel" class="mini">取消生成</button>
           <button id="gen-retry" class="mini">重试失败项</button>
+          <button id="gen-goto-config" class="mini">去配置生成服务</button>
         </div>
         <p class="hint">上传照片后会在后台自动生成 3D 立体形象：先用原图占位，每生成一帧即时替换，面板显示真实进度与成功/失败数量。生成需要把所选图片发送到已配置的生成服务；未配置时仅使用原图。支持 PNG/JPG/GIF/WebP。</p>
       </div>
@@ -197,6 +198,40 @@
         <label class="row"><span>从</span><input type="time" id="dnd-start" /><span>到</span><input type="time" id="dnd-end" />
           <button id="dnd-save" class="mini">保存</button></label>
       </div>
+      <div class="card">
+        <h2>🧠 图像生成服务</h2>
+        <div class="add-row">
+          <select id="gen-provider">
+            <option value="comate">Comate 兼容接口</option>
+            <option value="qianfan">百度千帆</option>
+          </select>
+          <span id="gen-config-state" class="hint" style="margin:0"></span>
+        </div>
+        <div id="gen-comate-fields">
+          <div class="add-row">
+            <input type="text" id="gen-comate-url" placeholder="接口地址（必须 https://）" />
+          </div>
+          <div class="add-row">
+            <input type="text" id="gen-comate-login" placeholder="身份头 login-name（按服务要求）" />
+          </div>
+        </div>
+        <div id="gen-qianfan-fields" style="display:none">
+          <div class="add-row">
+            <input type="text" id="gen-qianfan-url" placeholder="https://qianfan.baidubce.com/v2/images/generations" />
+          </div>
+          <div class="add-row">
+            <input type="text" id="gen-qianfan-model" placeholder="模型，如 ernie-image-turbo" />
+            <input type="password" id="gen-qianfan-key" placeholder="API Key（留空表示不修改）" />
+          </div>
+        </div>
+        <div class="add-row">
+          <button id="gen-save">保存配置</button>
+          <button id="gen-test" class="mini">测试连接</button>
+        </div>
+        <p id="gen-config-msg" class="gen-status"></p>
+        <p class="hint">配置保存在本机用户目录（权限 600），不会写入安装包或日志。未配置时上传照片只使用原图。</p>
+      </div>
+
       <div class="card">
         <h2>⚙️ 通用</h2>
         <label class="row"><input type="checkbox" id="autolaunch" /><span>开机自动启动</span></label>
