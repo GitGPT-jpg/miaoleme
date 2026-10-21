@@ -5,7 +5,6 @@ const photoB = document.getElementById('pet-photo-b');
 const bubble = document.getElementById('bubble');
 const menu = document.getElementById('menu');
 const stage = document.getElementById('stage');
-const feedBadge = document.getElementById('feed-badge');
 
 const FORMS = {
   cat:   { emoji: '🐱', name: '喵喵' },
@@ -331,7 +330,7 @@ function dragging() { return mode === 'drag'; }
 function overInteractive(x, y) {
   const el = document.elementFromPoint(x, y);
   if (!el) return false;
-  return el.closest('#pet') || el.closest('#menu') || el.closest('#bubble') || el.closest('#feed-badge');
+  return el.closest('#pet') || el.closest('#menu') || el.closest('#bubble');
 }
 
 function setIgnore(v) {
@@ -412,18 +411,11 @@ menu.addEventListener('click', (e) => {
 
 function renderFeedBadge(fs) {
   if (!fs) return;
-  const waterBtn = feedBadge.querySelector('[data-feed="water"]');
-  const foodBtn = feedBadge.querySelector('[data-feed="food"]');
-  waterBtn.classList.toggle('hidden', !fs.water);
-  foodBtn.classList.toggle('hidden', !fs.meal);
-  feedBadge.classList.toggle('hidden', !fs.water && !fs.meal);
+  const waterBtn = menu.querySelector('[data-act="water"]');
+  const foodBtn = menu.querySelector('[data-act="food"]');
+  if (waterBtn) waterBtn.classList.toggle('has-request', !!fs.water);
+  if (foodBtn) foodBtn.classList.toggle('has-request', !!fs.meal);
 }
-feedBadge.addEventListener('click', (e) => {
-  const btn = e.target.closest('button');
-  if (!btn) return;
-  if (btn.dataset.feed === 'water') window.api.feedWater();
-  else if (btn.dataset.feed === 'food') window.api.feedFood();
-});
 
 // ---------- 动作 / 走路 / 游走 ----------
 async function ensurePos() {
