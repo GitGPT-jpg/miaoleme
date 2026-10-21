@@ -558,9 +558,9 @@ document.getElementById('feed-water-btn').addEventListener('click', async () => 
   flash(document.getElementById('feed-water-btn'), '喂好啦 💧');
 });
 document.getElementById('feed-food-btn').addEventListener('click', async () => {
-  const s = await window.api.feedFood();
-  if (s && s.feed) renderMealStatus(s.feed);
-  flash(document.getElementById('feed-food-btn'), '喂好啦 🍚');
+  const r = await window.api.feedFood();
+  if (r && r.state && r.state.feed) renderMealStatus(r.state.feed);
+  flash(document.getElementById('feed-food-btn'), r && r.fed ? '喂好啦 🍚' : '现在不是饭点');
 });
 
 function renderMealStatus(feed) {
