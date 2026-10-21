@@ -227,14 +227,19 @@ function disableRig() {
   if (rigRAF) { cancelAnimationFrame(rigRAF); rigRAF = null; }
 }
 
+let rigLastDraw = 0;
 function startRig() {
   if (rigRAF) cancelAnimationFrame(rigRAF);
-  const loop = () => {
+  const loop = (now) => {
     if (!rigOn || !rig) return;
-    drawRig(performance.now() / 1000);
+    // 限流 ~30fps：桌宠尺寸小，30fps 视觉足够，省电
+    if (now - rigLastDraw >= 32) {
+      rigLastDraw = now;
+      drawRig(now / 1000);
+    }
     rigRAF = requestAnimationFrame(loop);
   };
-  loop();
+  rigRAF = requestAnimationFrame(loop);
 }
 
 // 参数为可调常量：先用近似值，再按截图微调
