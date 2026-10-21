@@ -241,6 +241,230 @@ html, body {
   transition: transform .15s;
 }
 #menu button:hover { transform: scale(1.15); }
+/* 待喂提示：仅一个小红点，替代原来的脉冲胶囊 */
+#menu button.has-request { position: relative; }
+#menu button.has-request::after {
+  content: "";
+  position: absolute;
+  top: 1px; right: 1px;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #ff4d4f;
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.9);
+}
+
+/* ---------- 自定义图片（3D 立体效果 + 可行走） ---------- */
+.pet-photo-wrap {
+  perspective: 650px;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  height: 140px;
+}
+.pet-photo-img {
+  position: absolute;
+  bottom: 0;
+  width: 120px;
+  height: auto;
+  max-height: 130px;
+  object-fit: contain;
+  transform-style: preserve-3d;
+  /* 透明图直接用 drop-shadow 贴合轮廓，营造立体悬浮/站立感 */
+  filter:
+    drop-shadow(0 6px 4px rgba(0,0,0,0.28))
+    drop-shadow(0 2px 1px rgba(0,0,0,0.18));
+  animation: float3d 3.6s ease-in-out infinite;
+  will-change: transform, opacity, filter;
+  transform-origin: bottom center;
+  /* 状态切换的丝滑过渡：双层交叉淡化 */
+  transition: opacity 0.45s ease, filter 0.45s ease;
+}
+.pet-photo-b { opacity: 0; }
+.rig-canvas {
+  position: absolute;
+  bottom: 0;
+  width: 176px;
+  height: 160px;
+  display: none;
+}
+#pet.rig-on .rig-canvas { display: block; }
+#pet.rig-on .pet-photo-img { display: none; }
+/* 朝向翻转 */
+#pet.face-left .pet-photo-img { transform: scaleX(-1); }
+
+@keyframes float3d {
+  0%   { transform: translateY(0)    rotateY(-8deg); }
+  50%  { transform: translateY(-7px) rotateY(8deg); }
+  100% { transform: translateY(0)    rotateY(-8deg); }
+}
+/* 行走时的摇摆（走路waddle） */
+#pet.walking .pet-photo-img { animation: walkWaddle 0.4s ease-in-out infinite; }
+#pet.walking.face-left .pet-photo-img { animation: walkWaddleL 0.4s ease-in-out infinite; }
+@keyframes walkWaddle {
+  0%,100% { transform: translateY(0) rotate(-4deg); }
+  50%     { transform: translateY(-5px) rotate(4deg); }
+}
+@keyframes walkWaddleL {
+  0%,100% { transform: scaleX(-1) translateY(0) rotate(4deg); }
+  50%     { transform: scaleX(-1) translateY(-5px) rotate(-4deg); }
+}
+
+/* 自定义形态下隐藏 emoji 脸；非自定义形态隐藏照片 */
+#pet.form-custom .pet-face { display: none; }
+#pet:not(.form-custom) .pet-photo-wrap { display: none; }
+#pet.form-custom .pet-shadow {
+  width: 86px; height: 16px; margin-top: -4px;
+  background: rgba(0,0,0,0.22);
+}
+/* 底部按钮条出现时，桌宠略上移，避免主体被条遮挡 */
+#pet.form-custom { margin-bottom: 34px; }
+#pet.form-custom.mood-alert .pet-photo-img { animation: float3dAlert 0.3s ease-in-out infinite; }
+@keyframes float3dAlert {
+  0%,100% { transform: translateX(-4px) rotateY(-6deg); }
+  50%     { transform: translateX(4px) rotateY(6deg); }
+}
+
+/* 动作次级运动：在序列帧之上叠加挤压/摆动，增强真实感 */
+#pet.act-roll .pet-photo-img { animation: seqRoll 1.4s ease-in-out infinite; }
+#pet.act-eat .pet-photo-img { animation: seqEat 1.2s ease-in-out infinite; }
+#pet.act-drink .pet-photo-img { animation: seqDrink 1.1s ease-in-out infinite; }
+#pet.act-groom .pet-photo-img { animation: seqGroom 1.6s ease-in-out infinite; }
+#pet.act-stretch .pet-photo-img { animation: seqStretch 1.6s ease-in-out infinite; }
+@keyframes seqRoll {
+  0%,100% { transform: rotate(-3deg) translateY(0); }
+  50%     { transform: rotate(3deg) translateY(-5px); }
+}
+@keyframes seqEat {
+  0%,100% { transform: translateY(0) scale(1, 1); }
+  50%     { transform: translateY(-3px) scale(1.02, 0.98); }
+}
+@keyframes seqDrink {
+  0%,100% { transform: rotate(-2deg) translateY(0); }
+  50%     { transform: rotate(1deg) translateY(-4px); }
+}
+@keyframes seqGroom {
+  0%,100% { transform: rotate(-2.5deg); }
+  50%     { transform: rotate(2.5deg); }
+}
+@keyframes seqStretch {
+  0%,100% { transform: scale(1, 1) translateY(0); }
+  50%     { transform: scale(1.03, 0.97) translateY(-6px); }
+}
+
+/* 动作定格：停止浮动，改为轻微呼吸；睡觉更平缓 */
+#pet.acting .pet-photo-img { animation: actBreathe 2.6s ease-in-out infinite; }
+#pet.act-sleep .pet-photo-img { animation: actSleep 3.4s ease-in-out infinite; }
+@keyframes actBreathe {
+  0%,100% { transform: translateY(0) scale(1); }
+  50%     { transform: translateY(-2px) scale(1.02); }
+}
+@keyframes actSleep {
+  0%,100% { transform: scale(1); }
+  50%     { transform: scale(1.03); }
+}
+
+.pet-shadow {
+  width: 80px;
+  height: 14px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.18);
+  filter: blur(3px);
+  animation: shadowPulse 2.4s ease-in-out infinite;
+}
+
+@keyframes bob {
+  0%, 100% { transform: translateY(0) scale(1, 1); }
+  50% { transform: translateY(-10px) scale(0.98, 1.02); }
+}
+@keyframes shadowPulse {
+  0%, 100% { transform: scale(1); opacity: 0.18; }
+  50% { transform: scale(0.82); opacity: 0.1; }
+}
+
+/* 心情：开心时轻微摇摆，警告时快速抖动 */
+#pet.mood-happy .pet-face { animation: happyWiggle 0.6s ease-in-out infinite; }
+#pet.mood-alert .pet-face { animation: alertShake 0.3s ease-in-out infinite; }
+
+@keyframes happyWiggle {
+  0%, 100% { transform: rotate(-6deg) translateY(-4px); }
+  50% { transform: rotate(6deg) translateY(-8px); }
+}
+@keyframes alertShake {
+  0%, 100% { transform: translateX(0) translateY(-4px); }
+  25% { transform: translateX(-4px) translateY(-4px); }
+  75% { transform: translateX(4px) translateY(-4px); }
+}
+
+/* ---------- 气泡 ---------- */
+#bubble {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 190px;
+  background: #fff;
+  color: #333;
+  padding: 8px 12px;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: center;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+  -webkit-app-region: no-drag;
+  transition: opacity .2s, transform .2s;
+}
+#bubble::after {
+  content: "";
+  position: absolute;
+  bottom: -7px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 7px solid transparent;
+  border-top-color: #fff;
+  border-bottom: none;
+}
+
+/* ---------- 悬浮快捷菜单 ---------- */
+#menu {
+  position: absolute;
+  bottom: 4px;                /* 固定在窗口最下方 */
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 22px;
+  background: rgba(255,255,255,0.88);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+  z-index: 70;                /* 盖在猫咪之上：猫不再遮挡按钮 */
+  -webkit-app-region: no-drag;
+}
+#menu button {
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.18);
+  font-size: 15px;
+  cursor: pointer;
+  transition: transform .15s;
+}
+#menu button:hover { transform: scale(1.15); }
+/* 待喂提示：仅一个小红点，替代原来的脉冲胶囊 */
+#menu button.has-request { position: relative; }
+#menu button.has-request::after {
+  content: "";
+  position: absolute;
+  top: 1px; right: 1px;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #ff4d4f;
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.9);
+}
 
 /* ---------- 喂食请求徽标 ---------- */
 #feed-badge {
