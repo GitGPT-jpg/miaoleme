@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const {
-  dateKey, mealSlotAt, mealEligible, inDndWindow, meetingNotice, ddlNotice, ddlLabel, clearMarks
+  dateKey, mealSlotAt, mealEligible, inDndWindow, meetingNotice, ddlNotice, ddlLabel, clearMarks, feedPlan
 } = require('../lib/schedule');
 
 const at = (h, m = 0, day = 20) => new Date(2026, 9, day, h, m, 0, 0).getTime();
@@ -111,4 +111,18 @@ test('稍后提醒期间不触发，到期后恢复', () => {
   assert.equal(mealEligible(feed, 'lunch', now, now + 10 * 60 * 1000), false);
   assert.equal(mealEligible(feed, 'lunch', now + 11 * 60 * 1000, now + 10 * 60 * 1000), true);
   assert.equal(mealEligible(feed, 'lunch', now, 0), true);
+});
+
+test('喂饭决策：只标记当前餐次；无请求不加亲密度', () => {
+  const lunchFeed = { mealSlot: null, mealRequest: false };
+  const atNoon = at(12, 10);
+  const p1 = feedPlan(lunchFeed, atNoon);
+  assert.equal(p1.slot, 'lunch');
+  assert.equal(p1.awardIntimacy, false, '无请求不加分');
+  assert.equal(feedPlan({ mealSlot: 'dinner', mealRequest: true }, atNoon).slot, 'dinner');
+  assert.equal(feedPlan({ mealSlot: 'dinner', mealRequest: true }, atNoon).awardIntimacy, true);
+  // 上午 9 点：不在餐窗，也没有待喂请求 → 不标记任何餐次
+  const p3 = feedPlan({ mealSlot: null, mealRequest: false }, at(9, 0));
+  assert.equal(p3.slot, null);
+  assert.equal(p3.markFed, false);
 });
