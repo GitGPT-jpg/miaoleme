@@ -39,6 +39,7 @@ const { clampToArea, isInsideAnyDisplay } = require('./lib/geometry');
 const { restorePomodoro, pomoSnapshot } = require('./lib/pomodoro');
 const { buildBundledSequences, ACTION_META, WALK } = require('./lib/sequences');
 const { RIG_PARTS: RIG_PLAN, rigFilePath, coreRigPresent, optionalRigPresent } = require('./lib/rig');
+const { alphaBBox, heightScale } = require('./lib/frameNorm');
 
 function loadState() {
   const res = readState(STORE_FILE);
@@ -297,6 +298,7 @@ async function genAvatarFrame(srcPath, poseName, prompt) {
     if (!valid.ok) return { ok: false, error: valid.error };
     const outPath = path.join(app.getPath('userData'), `pet-gen-${poseName}-${Date.now()}${valid.ext}`);
     fs.writeFileSync(outPath, buf);
+    if (!poseName.startsWith('rig-')) normalizePoseFrame(outPath);
     return { ok: true, path: outPath };
   };
 
@@ -344,6 +346,23 @@ function genViaScript(cfg, srcPath, poseName, prompt) {
     });
     child.on('error', () => finish({ ok: false, error: 'transient' }));
   });
+}
+
+// 姿势帧归一化：裁剪透明边、统一高度，减少序列播放时的忽大忽小
+function normalizePoseFrame(file, targetH = 340) {
+  try {
+    const img = nativeImage.createFromPath(file);
+    if (img.isEmpty()) return;
+    const { width, height } = img.getSize();
+    const bmp = img.getBitmap();
+    const box = alphaBBox(bmp, width, height);
+    if (!box) return;
+    const scale = heightScale(box.h, targetH);
+    const cropped = img.crop({ x: box.x, y: box.y, width: box.w, height: box.h });
+    const outH = Math.max(1, Math.round(box.h * scale));
+    const resized = cropped.resize({ height: outH, quality: 'best' });
+    fs.writeFileSync(file, resized.toPNG());
+  } catch (e) { /* 归一化失败不影响生成 */ }
 }
 
 // ---------- 生成任务：隔离、并发、重试、取消、可查询 ----------
@@ -1390,6 +1409,7 @@ on('open-panel', openPanel);
 
 // ---------- 生命周期 ----------
 let reminderTimer = null;
+let cursorTimer = null;
 app.whenReady().then(() => {
   createPetWindow();
   createPanelWindow();
@@ -1400,6 +1420,19 @@ app.whenReady().then(() => {
   checkReminders();
   reminderTimer = setInterval(checkReminders, 20 * 1000); // 每 20 秒检查一次
   restorePomodoroOnStartup();
+
+  // 光标位置广播：让桌宠的视线/身体跟随用户（10Hz，轻量）
+  cursorTimer = setInterval(() => {
+    if (!petWin || petWin.isDestroyed()) return;
+    try {
+      const c = screen.getCursorScreenPoint();
+      const b = petWin.getBounds();
+      petWin.webContents.send('cursor', {
+        x: c.x - (b.x + b.width / 2),
+        y: c.y - (b.y + b.height / 2)
+      });
+    } catch (e) { /* ignore */ }
+  }, 100);
 
   // 上次退出时仍在运行的任务：标记为中断，避免面板显示虚假“生成中”
   if (state.genJob && state.genJob.status === 'running') {
@@ -1424,6 +1457,7 @@ app.whenReady().then(() => {
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   if (reminderTimer) clearInterval(reminderTimer);
+  if (cursorTimer) clearInterval(cursorTimer);
   if (pomo.timer) clearInterval(pomo.timer);   // 只停计时器，保留 state.pomo 供下次续跑
   for (const child of genChildren) { try { child.kill('SIGKILL'); } catch (e) { /* already gone */ } }
   genChildren.clear();
