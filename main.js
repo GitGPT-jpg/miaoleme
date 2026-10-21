@@ -32,7 +32,7 @@ app.on('second-instance', () => { try { openPanel(); } catch (e) { /* not ready 
 const STORE_FILE = path.join(app.getPath('userData'), 'zerobreak-store.json');
 
 const { normalizeState, readState } = require('./lib/store');
-const { mealSlotAt, mealEligible, inDndWindow, meetingNotice, ddlNotice, clearMarks, dateKey } = require('./lib/schedule');
+const { mealSlotAt, mealEligible, inDndWindow, meetingNotice, ddlNotice, clearMarks, dateKey, feedPlan } = require('./lib/schedule');
 const { classifyGenError, validateImageBuffer, deriveJobStatus, extractImageBase64 } = require('./lib/gen');
 const { createGenJob } = require('./lib/genjob');
 const { clampToArea, isInsideAnyDisplay } = require('./lib/geometry');
@@ -210,7 +210,7 @@ function httpsJson(url, headers, payload) {
       });
       res.on('end', () => {
         if (res.statusCode >= 200 && res.statusCode < 300) resolve(data);
-        else reject(new Error('HTTP ' + res.statusCode + ' ' + data.slice(0, 200)));
+        else reject(new Error('HTTP ' + res.statusCode));   // 不回显上游响应体，避免敏感信息进日志/提示
       });
     });
     req.on('error', reject);
@@ -877,7 +877,15 @@ function publicState() {
     form: state.form,
     hasCustomImage: !!customImagePath(),
     // UI 契约：布尔徽标状态（与 feed-state 事件形状一致）
-    feed: { water: !!state.feed.waterRequest, meal: !!state.feed.mealRequest },
+    feed: {
+      water: !!state.feed.waterRequest,
+      meal: !!state.feed.mealRequest,
+      mealSlot: state.feed.mealSlot || null,
+      fedToday: {
+        lunch: state.feed.lastMealFed.lunch === dateKey(Date.now()),
+        dinner: state.feed.lastMealFed.dinner === dateKey(Date.now())
+      }
+    },
     water: state.water,
     sit: state.sit,
     pomodoro: state.pomodoro,
@@ -910,14 +918,18 @@ function feedWater() {
 
 function feedFood() {
   const now = Date.now();
-  const slot = state.feed.mealSlot || mealSlotAt(now) || 'lunch';
+  const plan = feedPlan(state.feed, now);
+  const slot = plan.slot;
   state.feed.mealRequest = false;
   state.feed.mealNagTs = 0;
   state.feed.mealSlot = null;
   state.feed.mealRequestDate = '';
-  // 只把被喂的那一餐记为已喂，晚餐仍会正常触发
-  state.feed.lastMealFed[slot] = dateKey(now);
-  state.stats.intimacy += 2;
+  if (plan.markFed) {
+    // 只把被喂的那一餐记为已喂，晚餐仍会正常触发
+    state.feed.lastMealFed[slot] = dateKey(now);
+  }
+  // 只有真正响应了讨粮请求才加亲密度，避免反复点击刷分
+  if (plan.awardIntimacy) state.stats.intimacy += 2;
   saveState();
   broadcastFeedState();
   if (petWin) petWin.webContents.send('pet-say', { action: 'eat', text: '猫粮好吃~ 主人也要好好吃饭哦！', mood: 'happy' });
@@ -938,17 +950,27 @@ function drinkCheckin() {
 function snoozeAll(minutes) {
   const mins = Math.min(120, Math.max(1, parseInt(minutes, 10) || 10));
   const now = Date.now();
-  if (state.water.enabled) state.water.lastRemindTs = now + mins * 60000 - state.water.intervalMin * 60000;
-  if (state.sit.enabled) state.sit.lastRemindTs = now + mins * 60000 - state.sit.intervalMin * 60000;
-  state.feed.waterRequest = false;
-  state.feed.waterNagTs = 0;
-  const slot = mealSlotAt(now);
-  if (slot) state.feed.lastMealRequest[slot] = '';   // 允许窗口内再次提醒
-  state.feed.mealRequest = false;
-  state.feed.mealNagTs = 0;
-  state.feed.mealSlot = null;
-  state.feed.mealRequestDate = '';
-  state.feed.mealSnoozeUntil = now + mins * 60000;
+  const until = now + mins * 60000;
+  const hasWater = state.feed.waterRequest;
+  const hasMeal = state.feed.mealRequest;
+  // 有明确的待处理请求时只延后它；没有任何请求时才延后周期提醒
+  if (hasWater || (!hasMeal && state.water.enabled)) {
+    state.water.lastRemindTs = until - state.water.intervalMin * 60000;
+    state.feed.waterRequest = false;
+    state.feed.waterNagTs = 0;
+  }
+  if (hasMeal) {
+    const slot = state.feed.mealSlot || mealSlotAt(now);
+    if (slot) state.feed.lastMealRequest[slot] = '';
+    state.feed.mealRequest = false;
+    state.feed.mealNagTs = 0;
+    state.feed.mealSlot = null;
+    state.feed.mealRequestDate = '';
+    state.feed.mealSnoozeUntil = until;
+  }
+  if (!hasWater && !hasMeal && state.sit.enabled) {
+    state.sit.lastRemindTs = until - state.sit.intervalMin * 60000;
+  }
   saveState();
   broadcastFeedState();
   petSay(`好的，${mins} 分钟后再提醒~`, 'normal', true);

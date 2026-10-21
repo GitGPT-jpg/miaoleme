@@ -108,12 +108,12 @@ function setGenStatus(s) {
     loadCustomPreview();
   } else if (st === 'failed') {
     genStatusEl.classList.add('err');
-    genStatusEl.textContent = '❌ 生成失败，已保留原图/最近成功形象';
+    genStatusEl.textContent = '❌ 生成失败，已保留原图与已完成帧；检查生成配置后可点「重试失败项」';
     genProgEl.classList.remove('show');
     showGenActions(false, true);
   } else if (st === 'unavailable') {
     genStatusEl.classList.add('err');
-    genStatusEl.textContent = '⚠️ 未配置生成服务，当前使用原图';
+    genStatusEl.textContent = '⚠️ 未配置生成服务，当前使用原图；参考 generation.config.example.json 配置后重试';
     genProgEl.classList.remove('show');
   }
 }
@@ -558,14 +558,29 @@ document.getElementById('feed-water-btn').addEventListener('click', async () => 
   flash(document.getElementById('feed-water-btn'), '喂好啦 💧');
 });
 document.getElementById('feed-food-btn').addEventListener('click', async () => {
-  await window.api.feedFood();
+  const s = await window.api.feedFood();
+  if (s && s.feed) renderMealStatus(s.feed);
   flash(document.getElementById('feed-food-btn'), '喂好啦 🍚');
 });
+
+function renderMealStatus(feed) {
+  const el = document.getElementById('meal-status');
+  if (!el || !feed) return;
+  const fed = feed.fedToday || {};
+  const slotName = feed.mealSlot === 'dinner' ? '晚餐' : feed.mealSlot === 'lunch' ? '午餐' : '';
+  const parts = [
+    `午餐：${fed.lunch ? '✅ 已喂' : '待喂'}`,
+    `晚餐：${fed.dinner ? '✅ 已喂' : '待喂'}`
+  ];
+  if (feed.meal) parts.push(`猫咪正在讨${slotName || '饭'}`);
+  el.textContent = parts.join(' · ');
+}
 
 // ---------- 初始化 ----------
 function renderAll(s) {
   if (s.mealMenus) applyMealMenus(s.mealMenus);
   if (s.games && s.games.rps) { rpsScore = s.games.rps; renderRpsScore(); }
+  renderMealStatus(s.feed);
   renderForm(s.form);
   loadCustomPreview();
   renderWater(s.water);

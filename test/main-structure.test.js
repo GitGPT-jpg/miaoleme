@@ -42,3 +42,11 @@ test('关键通道存在', () => {
     assert.match(SRC, new RegExp(`^(?:handle|on)\\('${ch}'`, 'm'), `缺少通道 ${ch}`);
   }
 });
+
+test('退出路径保留番茄快照（不得调用 stopPomodoro 清空）', () => {
+  const idx = SRC.indexOf("app.on('will-quit'");
+  assert.ok(idx > 0);
+  const block = SRC.slice(idx, idx + 500);
+  assert.equal(/stopPomodoro\s*\(/.test(block), false, 'will-quit 内不应调用 stopPomodoro');
+  assert.match(block, /clearInterval\(pomo\.timer\)/);
+});
