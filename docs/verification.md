@@ -74,6 +74,9 @@
 | 通知点击唤起面板 | 代码复核（Notification click → openPanel） | PASS（代码级，点击手测 NOT_RUN） |
 | 帧 dataURL 缓存 | 代码复核（path+mtime+size 键，40 条上限） | PASS（代码级） |
 | 生成按钮语义 | 代码复核（生成中仅取消；失败/部分/取消仅重试） | PASS（代码级，UI 手测 NOT_RUN） |
+| 自定义吃饭菜单持久化 | `npm test` + 重启后读取 store | PASS（2–12 项、20 字上限；菜单写入并恢复） |
+| 石头剪刀布战绩持久化 | `npm test` + 重启读取 | PASS（非法值归零） |
+| 会议/DDL 列表去抖重绘 | 代码复核（JSON 签名相同则跳过） | PASS（代码级） |
 | 残留 running 任务标记 | 预置 `genJob.status=running` → 重启 → 读取 store | PASS（status=failed，errorCode=interrupted，activePose=null） |
 | 拖拽中停止走路动画类 | 代码复核（beginDrag 移除 walking 类） | PASS（代码级，交互手测 NOT_RUN） |
 | 开发版启动 | `npm start`，进程存活，日志仅登录项权限报错（沙箱限制） | PASS |
@@ -87,7 +90,14 @@
 | 30–60 分钟稳定性观察 | 安装版（含单实例/番茄恢复/生成修复）连续 30 分钟，每 3 分钟采样 | **PASS**（0–0.7% CPU，RSS 128.6MB → 60.6MB，无持续增长；见第四节） |
 | 自动游走 IPC 优化前后 CPU | 5s 间隔采样主进程 CPU/RSS | PASS（见下） |
 
-## 三、已知限制与未完成项
+## 三、分发
+
+- 临时下载页（内部可见）：https://miaoleme-download.popo.baidu-int.com
+  - Windows x64 免安装包 `miaoleme-win-x64-0.2.0.tar.xz`（80.9MB，当前代码构建，含 SHA-256）
+  - 非 NSIS 安装向导：本机 wine/makensis 为 x86_64、无 Rosetta，无法在 Apple Silicon 构建 exe 安装器
+- macOS 安装包：`dist/喵了么-0.2.0-arm64.dmg`（104MB，超过 popo 单页上限，未托管）
+
+## 四、已知限制与未完成项
 1. 原生 UI **交互**未自动化验证（窗口在另一 Space；未用合成点击以免干扰用户）。已通过窗口 ID 截图确认渲染正常、徽标状态与持久化一致。建议人工按：启动 → 悬停菜单 → 拖拽 → 喂水/喂粮 → 动作切换 → 关闭重开面板 → 托盘退出 逐项验收。
 2. 面板文案残留「约需十几秒」已在本轮修复（见提交），并在重启后确认不再出现。
 2. ~~番茄钟运行态不持久化~~ → 已实现持久化恢复：未到期继续计时；已到期只提示不计数（两次重启集成验证 PASS）。
