@@ -280,18 +280,26 @@ document.getElementById('spin-btn').addEventListener('click', () => {
   if (spinning) return;
   const items = currentMeals();
   const n = items.length;
-  const seg = 360 / n;
+  if (n < 2) return;
   const idx = Math.floor(Math.random() * n);
-  // 指针在正上方(0deg)，让所选扇区中心转到顶部
-  const target = 360 * 5 + (360 - (idx * seg + seg / 2));
-  wheelRotation = target;
+  // 目标角度与落点使用同一套纯函数，保证“指针指哪就是哪”
+  const plan = WheelMath.spinPlan(n, idx, 5);
+  wheelRotation = plan.rotation;
   spinning = true;
+  const spinBtn = document.getElementById('spin-btn');
+  spinBtn.disabled = true;
+  spinBtn.textContent = '转…';
   document.getElementById('meal-result').textContent = '';
   const wheel = document.getElementById('wheel');
   wheel.style.transform = `rotate(${wheelRotation}deg)`;
   setTimeout(() => {
     spinning = false;
-    const pick = items[idx];
+    spinBtn.disabled = false;
+    spinBtn.textContent = '转！';
+    // 以最终角度反推指针下的扇区（唯一事实来源）
+    const landed = WheelMath.landedIndex(wheelRotation, n);
+    const pick = items[landed];
+    highlightSegment(landed);
     document.getElementById('meal-result').textContent = `就吃「${pick}」吧！`;
     window.api.petSay({ text: `今天就吃「${pick}」吧~`, mood: 'happy' });
     // 归一化角度，避免数值无限增大
@@ -301,6 +309,13 @@ document.getElementById('spin-btn').addEventListener('click', () => {
     requestAnimationFrame(() => { wheel.style.transition = ''; });
   }, 4100);
 });
+
+// 高亮指针落点所在的扇区标签，便于一眼确认结果与画面一致
+function highlightSegment(index) {
+  document.querySelectorAll('#wheel .seg').forEach((el, i) => {
+    el.classList.toggle('picked', i === index);
+  });
+}
 
 document.getElementById('meal-custom-save').addEventListener('click', async () => {
   const raw = document.getElementById('meal-custom').value.trim();
