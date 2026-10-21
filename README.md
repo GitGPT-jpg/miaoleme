@@ -120,6 +120,8 @@ npm test        # 单元测试（node:test）：数据校验/损坏恢复、餐�
 
 ## ⚠️ 说明与限制
 
+- Windows 内测免安装包基于 Electron 33（受托管页 100MB 体积上限约束）；macOS 为 Electron 45。正式分发前 Windows 侧需升级并在真机冒烟。
+
 - 打包产物未签名：首次打开若被拦截，右键 → 打开；正式分发需要签名/公证
 - Windows 安装包（NSIS）需在 Windows 构建：仓库根目录 `windows-build-workflow.yml` 移入 `.github/workflows/` 后由 CI 产出
 - 桌宠 3D 帧由图像生成模型制作，仅供本项目使用

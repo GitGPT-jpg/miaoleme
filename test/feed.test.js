@@ -6,7 +6,7 @@ const { normalizeState } = require('../lib/store');
 const at = (h, m = 0) => new Date(2026, 9, 21, h, m, 0, 0).getTime();
 const fresh = () => normalizeState(null);
 
-test('喂水：仅回应讨水才加亲密度，连点不能刷分', () => {
+test('喂水：仅回应讨水才加亲密度，连点不能刷分/刷水数', () => {
   const s = fresh();
   const base = s.stats.intimacy;
   const r1 = feedWater(s, at(10));
@@ -15,6 +15,7 @@ test('喂水：仅回应讨水才加亲密度，连点不能刷分', () => {
   assert.equal(s.stats.waterDone, 1);
   const r2 = feedWater(s, at(10, 1));
   assert.equal(s.stats.intimacy, base, '连点仍不加分');
+  assert.equal(s.stats.waterDone, 1, '5 分钟内连点不重复计数');
 
   s.feed.waterRequest = true;
   const r3 = feedWater(s, at(10, 2));
@@ -57,4 +58,23 @@ test('喝水打卡清待喂但不加亲密度', () => {
   assert.equal(s.feed.waterNagTs, 0);
   assert.equal(s.stats.waterDone, 1);
   assert.equal(s.stats.intimacy, 0);
+});
+
+test('过期 mealSlot 不产生假成功', () => {
+  const s = fresh();
+  s.feed.mealSlot = 'lunch';
+  s.feed.mealRequest = true;
+  s.feed.mealRequestDate = '2026-10-20'; // 昨天的请求
+  const r = feedFood(s, new Date(2026, 9, 21, 9, 0).getTime()); // 今天 9 点
+  assert.equal(r.fed, false, '过期请求 + 非饭点不应喂成功');
+  assert.equal(s.feed.lastMealFed.lunch, '');
+});
+
+test('喝水打卡 5 分钟内重复点击不计数', () => {
+  const s = fresh();
+  drinkCheckin(s, at(10));
+  drinkCheckin(s, at(10, 2));
+  assert.equal(s.stats.waterDone, 1);
+  drinkCheckin(s, at(10, 6));
+  assert.equal(s.stats.waterDone, 2);
 });
