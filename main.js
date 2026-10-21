@@ -38,6 +38,7 @@ const { createGenJob } = require('./lib/genjob');
 const { clampToArea, isInsideAnyDisplay } = require('./lib/geometry');
 const { restorePomodoro, pomoSnapshot } = require('./lib/pomodoro');
 const { buildBundledSequences, ACTION_META, WALK } = require('./lib/sequences');
+const { RIG_PARTS: RIG_PLAN, rigFilePath, coreRigPresent, optionalRigPresent } = require('./lib/rig');
 
 function loadState() {
   const res = readState(STORE_FILE);
@@ -156,6 +157,15 @@ function customFrames() {
 // ---------- 后台生成 3D 形象 ----------
 const GEN_IDLE_PROMPT = 'Turn the person/pet/subject in this photo into an adorable chibi 3D mascot character, Pixar/Blender toy-figure style, big round head, large glossy expressive eyes, soft shading, keep the subject\'s key colors and recognizable features. Full body standing in a cute 3/4 front pose, soft studio lighting with subtle rim light, glossy clean render. Isolated on a FULLY TRANSPARENT background, PNG, subject centered, no ground, no baked shadow, high detail.';
 const GEN_WALK_PROMPT = 'Turn the person/pet/subject in this photo into an adorable chibi 3D mascot character, Pixar/Blender toy-figure style, big round head, large glossy eyes, keep the subject\'s key colors and recognizable features. Full body in a cute MID-WALK stride pose seen from a side 3/4 angle, one foot/paw lifted forward, playful happy expression, soft studio lighting, glossy clean render. Isolated on a FULLY TRANSPARENT background, PNG, subject centered, no ground, no baked shadow, high detail.';
+
+// 骨骼部件提示词（同一角色，透明底，便于 Canvas 绑定）
+const GEN_RIG_PROMPTS = {
+  'rig-body': 'Isolated cat BODY ONLY for 2D rigging, same cat as the photo: full torso standing in side profile, four legs included, NO head, NO tail, neck and hip stumps, soft plush 3D Pixar style, transparent background PNG, centered, no shadow.',
+  'rig-head': 'Isolated cat HEAD ONLY for 2D rigging, same cat as the photo: head neutral expression, front three-quarter view, neck stump, eyes open looking forward, soft plush 3D Pixar style, transparent background PNG, centered, no body, no shadow.',
+  'rig-tail': 'Isolated fluffy cat TAIL ONLY for 2D rigging, same cat as the photo: tail in a soft S curve, root at bottom left, soft plush 3D Pixar style, transparent background PNG, centered, no body, no shadow.',
+  'rig-head-blink': 'Isolated cat HEAD ONLY for 2D rigging, same cat as the photo: head with EYES CLOSED (blinking), relaxed expression, front three-quarter view, neck stump, soft plush 3D Pixar style, transparent background PNG, centered, no body, no shadow.',
+  'rig-head-ears': 'Isolated cat HEAD ONLY for 2D rigging, same cat as the photo: head with EARS FLATTENED BACK, alert expression, front three-quarter view, neck stump, soft plush 3D Pixar style, transparent background PNG, centered, no body, no shadow.'
+};
 
 // 动作帧提示词（通用主体，保持同一画风与透明底）
 const GEN_ACTION_PROMPTS = {
@@ -346,7 +356,7 @@ const GEN_REST = [
   { key: 'groom', prompt: GEN_ACTION_PROMPTS.groom, label: '舔毛' },
   { key: 'eat',   prompt: GEN_ACTION_PROMPTS.eat,   label: '吃饭' },
   { key: 'sleep', prompt: GEN_ACTION_PROMPTS.sleep, label: '睡觉' }
-];
+].concat(RIG_PLAN.map((p) => ({ key: p.key, prompt: GEN_RIG_PROMPTS[p.key], label: p.label, rig: true })));
 
 function jobSnapshot(job) {
   if (!job) return null;
@@ -371,6 +381,13 @@ function persistGenJob() {
 }
 
 function applyFrameToState(key, filePath) {
+  if (key.startsWith('rig-')) {
+    const target = rigFilePath(app.getPath('userData'), key);
+    if (target) {
+      try { fs.copyFileSync(filePath, target); fs.chmodSync(target, 0o600); } catch (e) { /* ignore */ }
+    }
+    return;   // 骨骼部件不改变当前形象，等全部就绪后刷新
+  }
   if (key === 'idle') state.customGenIdle = filePath;
   else if (key === 'walk') state.customGenWalk = filePath;
   else state.customGenActions = Object.assign({}, state.customGenActions || {}, { [key]: filePath });
@@ -396,6 +413,7 @@ function makeEmptySnapshot(jobId, sourceId, status, total, errorCode) {
 function startGenJob(sourcePath, sourceId, only) {
   const want = (k) => !only || only.includes(k);
   const has = (k) => {
+    if (k.startsWith('rig-')) return false;   // 骨骼部件随新照片重新生成
     if (k === 'idle') return !!(state.customGenIdle && fs.existsSync(state.customGenIdle));
     if (k === 'walk') return !!(state.customGenWalk && fs.existsSync(state.customGenWalk));
     return !!(state.customGenActions && state.customGenActions[k] && fs.existsSync(state.customGenActions[k]));
@@ -444,12 +462,15 @@ function startGenJob(sourcePath, sourceId, only) {
   genJob = runner.job;
   persistGenJob();
   sendGenStatus(runner.snapshot());
-  petSay(`正在把照片变成 3D 形象（${tasks.length} 个姿势），稍等~`, 'happy');
+  petSay(`正在生成 ${tasks.length} 个素材（姿势 + 骨骼部件），稍等~`, 'happy');
 
   runner.run().then((snap) => {
     if (genJob !== runner.job) return;
+    if (coreRigPresent(app.getPath('userData'), (f) => fs.existsSync(f))) {
+      if (petWin) petWin.webContents.send('rig-refresh');
+    }
     if (snap.status === 'completed') petSay('全部姿势生成完成，喜欢吗~', 'happy');
-    else if (snap.status === 'partial') petSay(`生成了 ${snap.succeeded}/${snap.total} 个姿势，失败的可以重试~`, 'normal');
+    else if (snap.status === 'partial') petSay(`生成了 ${snap.succeeded}/${snap.total} 个素材，失败的可以重试~`, 'normal');
     else if (snap.status === 'cancelled') petSay('生成已取消，继续用现在的形象~', 'normal');
     else petSay('3D 生成没成功，已保留原图和已完成帧；检查生成配置后可重试失败项', 'normal', true);
     cleanupOldGenFiles();
@@ -1006,14 +1027,24 @@ function rigPartPaths() {
 }
 
 handle('get-rig-parts', () => {
-  const paths = rigPartPaths();
+  const dir = app.getPath('userData');
+  const customCore = coreRigPresent(dir, (f) => fs.existsSync(f));
+  const paths = customCore
+    ? ['pet-rig-body.png', 'pet-rig-head.png', 'pet-rig-tail.png'].map((f) => path.join(dir, f))
+    : (!state.customImage && [RIG_PARTS_BODY, RIG_PARTS_HEAD, RIG_PARTS_TAIL].every((f) => fs.existsSync(f))
+      ? [RIG_PARTS_BODY, RIG_PARTS_HEAD, RIG_PARTS_TAIL] : null);
   if (!paths) return { usable: false, parts: {} };
   const parts = {};
   ['body', 'head', 'tail'].forEach((k, i) => {
     const u = fileToDataUrl(paths[i]);
     if (u) parts[k] = u;
   });
-  return { usable: Object.keys(parts).length === 3, parts };
+  if (customCore) {
+    const opt = optionalRigPresent(dir, (f) => fs.existsSync(f));
+    if (opt.blink) parts.blink = fileToDataUrl(path.join(dir, 'pet-rig-head-blink.png'));
+    if (opt.ears) parts.ears = fileToDataUrl(path.join(dir, 'pet-rig-head-ears.png'));
+  }
+  return { usable: Object.keys(parts).length >= 3, parts };
 });
 
 // 自定义图片：读取当前图片为 dataURL（受 CSP 限制，用 data: 而非 file://）
@@ -1050,6 +1081,10 @@ handle('upload-custom-image', async () => {
     const dest = path.join(app.getPath('userData'), `pet-custom-${jobId}${ext}`);
     fs.copyFileSync(src, dest);
     cancelGenJob();                 // 旧任务立即失效，不再回写
+    // 清掉上一只猫的骨骼部件，避免新旧形象混用
+    for (const p of RIG_PLAN) {
+      try { fs.rmSync(path.join(app.getPath('userData'), p.file), { force: true }); } catch (e) { /* ignore */ }
+    }
     state.customImage = dest;
     state.customGenIdle = null;     // 清除上一次生成的 3D 帧，待重新生成
     state.customGenWalk = null;
