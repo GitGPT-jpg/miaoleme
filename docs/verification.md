@@ -192,3 +192,51 @@ R2 → R3 修复：喂饭无待喂请求时不标记任何餐次且不加亲密�
 | 22:56 | 1800s | 0.0% | 60.6MB |
 
 结论：30 分钟内 CPU 基本为 0（峰值 0.7%），RSS 单调下降（macOS 回收），**未观察到持续无界增长**。该观察为单进程主进程口径，不覆盖 GPU/Utility 子进程；不做"12 小时稳定运行"的结论。
+
+## 七、功能收口验收（2026-10-21 晚，主线：首次启动→上传照片→生成→喂水喂饭→切换动作→重启恢复）
+
+**提交**：d887b43、da8c54a（基于 a2444b6 收口修复之上）。**测试**：100 项全部 PASS。
+**主线全程以真实应用执行**（fresh store → `AUTO_UPLOAD_PATH` 4 张参考图 → 真实生成服务 → DEMO_AUTOSTART 演示序列 → 两轮重启），证据为进程日志 + store 快照 + 窗口区域像素分析（/tmp/miaoshots/）。
+
+### 主线验证
+
+| 步骤 | 方式 | 结果 |
+|---|---|---|
+| 首次启动（fresh store） | 清空 store 后 `npm start` | PASS（状态归一化重建，窗口/面板正常） |
+| 上传 4 张照片 | `AUTO_UPLOAD_PATH` 走真实 `processUploadFiles`（与对话框同一入口） | PASS（`[auto-upload] result ok`，4 份 `pet-ref-*` 快照落盘） |
+| 后台生成 11 个素材 | 真实生成服务（6 动作帧 + 5 骨骼部件），并发 2 | PASS（genJob completed 11/11，failed=0，用时约 7 分钟） |
+| 喂水 | 演示序列调用真实 `feedWater()` → 读 store | PASS（waterDone 2→3、lastCheckinTs 写入、waterRequest 清空、intimacy +1） |
+| 喂饭 | 演示序列调用真实 `feedFood()` → 读 store | PASS（21:00 非饭点：不记账不假完成，符合餐次语义；饭点内行为由 test/feed.test.js 5 项覆盖） |
+| 切换动作 | 演示序列 act(roll) 等 + 日志 `[rig] disabled→enabled` 周期 | PASS（动作帧显示期间骨骼暂停，结束恢复；stretch/drink 无自定义帧→仅文案不换图，无崩溃） |
+| 重启恢复 | 杀进程 → 重启（无 AUTO_UPLOAD_PATH）→ 读 store | PASS（genJob=completed 11/11、customGenIdle/Walk/Actions、4 张参考图、rigSourceImage 全部保留；番茄钟运行态恢复续跑） |
+| 番茄钟 | 演示序列 startPomodoro + 重启 | PASS（pomo.active/work/endTs 持久化；重启后恢复；pomo 清空后不再残留） |
+
+### 渲染路径检查（用户点名三项，曾两处为死代码，已修复）
+
+| 检查项 | 修复前 | 修复后 | 证据 |
+|---|---|---|---|
+| 头部 2×2 网格 warp | `drawHeadWarped` 已定义但从未被调用（头部一直走裸 drawImage） | `drawRig` 内调用 `drawHeadWarped(pickHead(t), …, WarpMath.bandOffsets(gaze.x, gaze.y))`，锚点补偿 0.18h 与原 drawImage(-h*0.82) 一致 | 回归测试锁定调用点；rig 模式窗口像素逐帧变化（2s 间隔 2/3 像素变化） |
+| 眨眼/压耳部件 | `loadRig` 只加载身/头/尾，`parts.blink/ears` 被忽略，`rig.blink/ears` 恒为 null | 一并加载进 rig 对象，`pickHead` 按 3–6s 眨眼、8–15s 压耳切帧 | 回归测试锁定 `load(res.parts.blink/ears)`；无渲染异常 |
+| 写实模式呼吸 | 已生效（realBreath CSS 4.2s 循环） | — | photo 模式两帧间全区域轻微像素变化（<20 灰度级），与设计一致 |
+
+- rig 模式实测：`[rig] enabled` → 动作时 `[rig] disabled` → 结束 `[rig] enabled` 完整循环；窗口静止时每 2s 区域 2/3 像素变化（尾巴弹簧/呼吸/眨眼/warp 持续动画），无渲染异常（0 TypeError/ReferenceError）。
+- photo 模式实测：写实原图渲染（区域 mean 219/std 68.6）+ realBreath 微动画。
+
+### 缺失动作 / 生成超时 / 取消
+
+| 行为 | 验证 | 结果 |
+|---|---|---|
+| 缺失动作帧（drink/stretch，自定义形象未生成） | 演示序列 act('stretch') | PASS：不换图、文案正常、无异常（不跨猫回退到内置形象） |
+| 生成超时（单帧 5 分钟 / 整任务 10 分钟截止） | test/genjob.test.js「截止」用例 | PASS（未尝试项计失败，errorCode=deadline） |
+| 取消生成 | 面板「取消」→ IPC cancel-gen → cancelGenJob；test/genjob.test.js「取消」用例 | PASS（status=cancelled，在途结果不写回） |
+
+### 明确未验证项
+
+- Windows 实机运行：本机无 Windows；保留 zip/tar.xz 产物与 CI 工作流（NSIS 安装器需 Windows 构建，BLOCKED）。
+- 真实鼠标点击交互（通知点击/托盘点击）：NOT_RUN（自动化点击会干扰正在使用的桌面）。
+- 12 小时级长稳：仅做过 30 分钟观察（见第四节）。
+
+### 构建产物（v0.6.4）
+
+- macOS（Electron 45）：`dist/喵了么-0.6.4-arm64.dmg`、`dist/喵了么-0.6.4-arm64-mac.zip`
+- Windows x64（Electron 33，受 popo 100MB 上限）：`dist/喵了么-0.6.4-win.zip`、`download-page/miaoleme-win-x64-0.6.4.tar.xz`（免安装，SHA-256 见下载页）
