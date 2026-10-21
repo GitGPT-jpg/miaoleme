@@ -90,14 +90,23 @@
 | 30–60 分钟稳定性观察 | 安装版（含单实例/番茄恢复/生成修复）连续 30 分钟，每 3 分钟采样 | **PASS**（0–0.7% CPU，RSS 128.6MB → 60.6MB，无持续增长；见第四节） |
 | 自动游走 IPC 优化前后 CPU | 5s 间隔采样主进程 CPU/RSS | PASS（见下） |
 
-## 三、分发
+## 三、事故与修复记录
+
+**2026-10-21 番茄钟报时崩溃（用户反馈）**
+- 现象：点击托盘「开始番茄钟」弹出 `A JavaScript error occurred in the main process: Attempted to register a second handler for 'record-rps'`
+- 根因：一次脚本化补丁把两个 IPC 注册块误插进 `petSay()` 与 `notify()` 函数体（锚点注释在函数内也存在），导致每次说话都重复注册 IPC；第二次调用即抛错
+- 修复：还原两个函数体；把 `record-rps` / `set-meal-menu` 恢复到顶层 IPC 区且仅注册一次；为 `handle()/on()` 增加重复注册守卫（同类错误不再致命）
+- 回归：新增 `test/main-structure.test.js`（函数体内禁止 IPC 注册、channel 唯一性、关键通道存在）；运行验证：预置喝水到期，启动即触发 `petSay`，进程存活、无异常日志，`waterRequest=true`
+- 分发：Mac dmg/zip 与 Windows 包均以修复版重建，下载页更新为第 3 版（新 SHA-256）
+
+## 四、分发
 
 - 临时下载页（内部可见）：https://miaoleme-download.popo.baidu-int.com
   - Windows x64 免安装包 `miaoleme-win-x64-0.2.0.tar.xz`（80.9MB，当前代码构建，含 SHA-256）
   - 非 NSIS 安装向导：本机 wine/makensis 为 x86_64、无 Rosetta，无法在 Apple Silicon 构建 exe 安装器
 - macOS 安装包：`dist/喵了么-0.2.0-arm64.dmg`（104MB，超过 popo 单页上限，未托管）
 
-## 四、已知限制与未完成项
+## 五、已知限制与未完成项
 1. 原生 UI **交互**未自动化验证（窗口在另一 Space；未用合成点击以免干扰用户）。已通过窗口 ID 截图确认渲染正常、徽标状态与持久化一致。建议人工按：启动 → 悬停菜单 → 拖拽 → 喂水/喂粮 → 动作切换 → 关闭重开面板 → 托盘退出 逐项验收。
 2. 面板文案残留「约需十几秒」已在本轮修复（见提交），并在重启后确认不再出现。
 2. ~~番茄钟运行态不持久化~~ → 已实现持久化恢复：未到期继续计时；已到期只提示不计数（两次重启集成验证 PASS）。
