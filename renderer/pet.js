@@ -41,6 +41,11 @@ let actTimer = null;
 let sleepCycleTimer = null;
 let walkTimer = null;
 let rafId = null;
+let rigCanvas = document.getElementById('rig-canvas');
+let rctx = rigCanvas.getContext('2d');
+let rig = null;
+let rigOn = false;
+let rigRAF = null;
 
 function bumpSession() { session += 1; return session; }
 
@@ -60,12 +65,14 @@ function setIdle() {
 
 function applyForm(form) {
   currentForm = form;
+  disableRig();
   bumpSession();
   clearBehaviorTimers();
   mode = 'idle';
   pet.className = `form-${form} mood-normal`;
   if (form === 'custom') {
     loadCustomImage();
+    loadRig();
   } else if (MOOD_FACE[form]) {
     face.textContent = MOOD_FACE[form].normal;
   }
@@ -145,7 +152,7 @@ function loadCustomImage() {
 // 站立呼吸：在站立/坐姿之间缓缓交替（仅 idle 时）
 let idleTick = 0;
 setInterval(() => {
-  if (currentForm !== 'custom' || mode !== 'idle' || F.idle.length < 2) return;
+  if (rigOn || currentForm !== 'custom' || mode !== 'idle' || F.idle.length < 2) return;
   idleTick = (idleTick + 1) % 2;
   crossfadeTo(F.idle[idleTick], 1200);
 }, 4200);
@@ -157,7 +164,7 @@ function setMood(mood) {
     face.textContent = (MOOD_FACE[currentForm] && MOOD_FACE[currentForm][mood]) || (FORMS[currentForm] && FORMS[currentForm].emoji) || '🐱';
     return;
   }
-  if (mode !== 'idle') return;
+  if (rigOn || mode !== 'idle') return;
   if (mood === 'happy' && F.happy) crossfadeTo(F.happy, 350);
   else if (mood === 'normal' && F.idle.length) crossfadeTo(F.idle[0], 350);
 }
@@ -187,6 +194,91 @@ setInterval(() => {
   if (quiet || mode !== 'idle' || dragging()) return;
   if (Math.random() < 0.5) say(IDLE_LINES[Math.floor(Math.random() * IDLE_LINES.length)], 'happy');
 }, 60 * 1000);
+
+// ---------- 2D 骨骼（内置猫：尾→身→头 层级变换，持续动画） ----------
+function loadRig() {
+  window.api.getRigParts().then((res) => {
+    if (!res || !res.usable) { disableRig(); return; }
+    const load = (u) => new Promise((resolve) => {
+      const im = new Image();
+      im.onload = () => resolve(im);
+      im.onerror = () => resolve(null);
+      im.src = u;
+    });
+    Promise.all([load(res.parts.body), load(res.parts.head), load(res.parts.tail)]).then(([b, h, t]) => {
+      if (!b || !h || !t) { disableRig(); return; }
+      rig = { body: b, head: h, tail: t };
+      enableRig();
+    });
+  });
+}
+
+function enableRig() {
+  console.log('[rig] enabled');
+  rigOn = true;
+  pet.classList.add('rig-on');
+  startRig();
+}
+
+function disableRig() {
+  console.log('[rig] disabled');
+  rigOn = false;
+  pet.classList.remove('rig-on');
+  if (rigRAF) { cancelAnimationFrame(rigRAF); rigRAF = null; }
+}
+
+function startRig() {
+  if (rigRAF) cancelAnimationFrame(rigRAF);
+  const loop = () => {
+    if (!rigOn || !rig) return;
+    drawRig(performance.now() / 1000);
+    rigRAF = requestAnimationFrame(loop);
+  };
+  loop();
+}
+
+// 参数为可调常量：先用近似值，再按截图微调
+const RIG = {
+  body: { cx: 222, cy: 300, w: 330, h: 205 },
+  head: { nx: 336, ny: 196, w: 190, h: 190 },
+  tail: { rx: 132, ry: 296, w: 150, h: 170, base: 0.32 }
+};
+
+function drawRig(t) {
+  const W = rigCanvas.width, H = rigCanvas.height;
+  rctx.clearRect(0, 0, W, H);
+  const walking = mode === 'walk';
+  const acting = mode === 'act';
+  const bobHz = walking ? 5.5 : 1.3;
+  const bobAmp = walking ? 7 : 3;
+  const bob = Math.sin(t * bobHz) * bobAmp;
+  const breath = 1 + Math.sin(t * 1.15) * 0.018;
+  const sway = Math.sin(t * (walking ? 4.2 : 0.8)) * (walking ? 2.4 : 1.1);
+
+  // 尾巴（底层，绕根部摆动）
+  rctx.save();
+  rctx.translate(RIG.tail.rx, RIG.tail.ry);
+  rctx.rotate(RIG.tail.base + Math.sin(t * (walking ? 4.8 : 1.05)) * (walking ? 0.3 : 0.17));
+  rctx.drawImage(rig.tail, -32, -RIG.tail.h + 24, RIG.tail.w, RIG.tail.h);
+  rctx.restore();
+
+  // 身体（呼吸 + 摇摆 + 上下起伏）
+  rctx.save();
+  rctx.translate(RIG.body.cx, RIG.body.cy + bob);
+  rctx.rotate(sway * 0.006);
+  rctx.scale(1, breath);
+  rctx.drawImage(rig.body, -RIG.body.w / 2, -RIG.body.h, RIG.body.w, RIG.body.h);
+  rctx.restore();
+
+  // 头（颈部锚点：点头 + 倾斜 + 跟随呼吸）
+  rctx.save();
+  rctx.translate(RIG.head.nx + sway * 0.5, RIG.head.ny + bob * 0.85);
+  rctx.rotate(Math.sin(t * (walking ? 3.6 : 0.75)) * (walking ? 0.055 : 0.028));
+  rctx.translate(0, Math.sin(t * (walking ? 5.2 : 1.4)) * (walking ? 5 : 2.4));
+  if (acting) rctx.rotate(Math.sin(t * 2.4) * 0.02);
+  rctx.drawImage(rig.head, -RIG.head.w / 2, -RIG.head.h * 0.82, RIG.head.w, RIG.head.h);
+  rctx.restore();
+}
 
 // ---------- 鼠标穿透 + 拖拽 ----------
 window.api.setIgnoreMouse(true);
@@ -304,6 +396,7 @@ async function ensurePos() {
 function setWalkFrame(on) {
   clearInterval(walkTimer);
   walkTimer = null;
+  if (rigOn) { pet.classList.toggle('walking', on); return; }
   if (on) {
     pet.classList.add('walking');
     const seq = (F.walkSeq && F.walkSeq.frames && F.walkSeq.frames.length > 1) ? F.walkSeq.frames : F.walk;
@@ -329,6 +422,7 @@ function playAction(name) {
   const mySession = bumpSession();   // 任何新动作使旧的结束回调失效
   clearBehaviorTimers();
   mode = 'act';
+  if (rigOn) { disableRig(); }   // 动作使用序列帧
   pet.classList.remove('walking', 'face-left', ...ACT_CLASSES);
   pet.classList.add('acting', 'act-' + name);
   if (seq && seq.frames && seq.frames.length > 1) {
@@ -346,6 +440,7 @@ function playAction(name) {
     if (session !== mySession) return;   // 已被新动作/形态切换取代
     setIdle();
     if (F.idle.length) crossfadeTo(F.idle[0], 450);
+    if (rig) enableRig();          // 动作结束恢复骨骼常动
     scheduleWander();
   }, act.ms);
 }
@@ -401,7 +496,7 @@ function stopWander() {
   clearInterval(walkTimer); walkTimer = null;
   if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
   pet.classList.remove('walking');
-  if (currentForm === 'custom' && F.idle.length) crossfadeTo(F.idle[0], 350);
+  if (!rigOn && currentForm === 'custom' && F.idle.length) crossfadeTo(F.idle[0], 350);
   scheduleWander();
 }
 
@@ -415,7 +510,8 @@ window.api.onPetSay((msg) => {
 window.api.onCustomImageChanged(() => {
   bumpSession();
   setIdle();
-  loadCustomImage();
+  disableRig();
+  loadCustomImage();   // 上传形象后 getRigParts 会返回 unusable，保持帧动画
 });
 window.api.onFeedState((fs) => renderFeedBadge(fs));
 

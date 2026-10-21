@@ -66,6 +66,11 @@ const BUNDLED_WALK = path.join(__dirname, 'assets', 'cat-3d-walk.png');
 const BUNDLED_SIT = path.join(__dirname, 'assets', 'cat-3d-sit.png');
 const BUNDLED_WALK2 = path.join(__dirname, 'assets', 'cat-3d-walk2.png');
 const BUNDLED_HAPPY = path.join(__dirname, 'assets', 'cat-3d-happy.png');
+const RIG_PARTS = {
+  body: path.join(__dirname, 'assets', 'rig-body.png'),
+  head: path.join(__dirname, 'assets', 'rig-head.png'),
+  tail: path.join(__dirname, 'assets', 'rig-tail.png')
+};
 const BUNDLED_ACTIONS = {
   roll:  path.join(__dirname, 'assets', 'cat-3d-roll.png'),
   groom: path.join(__dirname, 'assets', 'cat-3d-groom.png'),
@@ -924,6 +929,28 @@ handle('set-form', (e, form) => {
   if (!allowed.includes(form)) return { ok: false, error: 'invalid form', state: publicState() };
   setForm(form);
   return publicState();
+});
+
+// 骨骼部件：优先使用为「用户上传形象」生成的部件（userData/pet-rig-*.png），
+// 否则无自定义形象时用内置猫部件；两者都缺则回退序列帧
+function rigPartPaths() {
+  const ud = app.getPath('userData');
+  const custom = ['body', 'head', 'tail'].map((k) => path.join(ud, `pet-rig-${k}.png`));
+  if (custom.every((f) => fs.existsSync(f))) return custom;
+  const bundled = [RIG_PARTS.body, RIG_PARTS.head, RIG_PARTS.tail];
+  if (!state.customImage && bundled.every((f) => fs.existsSync(f))) return bundled;
+  return null;
+}
+
+handle('get-rig-parts', () => {
+  const paths = rigPartPaths();
+  if (!paths) return { usable: false, parts: {} };
+  const parts = {};
+  ['body', 'head', 'tail'].forEach((k, i) => {
+    const u = fileToDataUrl(paths[i]);
+    if (u) parts[k] = u;
+  });
+  return { usable: Object.keys(parts).length === 3, parts };
 });
 
 // 自定义图片：读取当前图片为 dataURL（受 CSP 限制，用 data: 而非 file://）
