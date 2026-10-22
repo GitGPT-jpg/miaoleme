@@ -23,6 +23,7 @@
       "zh-CN",
       "en-US"
     ],
+    "afterPack": "build/afterPack.js",
     "files": [
       "main.js",
       "launch.js",

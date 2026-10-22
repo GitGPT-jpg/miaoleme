@@ -100,8 +100,8 @@
         <b>🍎 Mac 安装</b>（dmg 标准镜像）：
         <ol>
           <li>双击打开 dmg，把「喵了么」拖进旁边的「Applications」文件夹</li>
-          <li>从启动台（或应用程序文件夹）打开</li>
-          <li>首次打开若提示「无法验证开发者」：右键 App →「打开」→ 再点「打开」（未签名应用的通行方式）</li>
+          <li>打开「终端」，粘贴 <code>xattr -cr /Applications/喵了么.app</code> 回车（放行未签名应用，官方认可的安全做法）</li>
+          <li>从启动台双击「喵了么」运行。若没做第 2 步直接打开提示「已损坏」，补做即可</li>
         </ol>
         <b style="display:block;margin-top:12px">🪟 Windows 安装</b>（详见下载页）：
         <ol>

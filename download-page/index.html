@@ -38,12 +38,15 @@
       <a class="btn" href="https://lingdu-desktop-pet.popo.baidu-int.com/miaoleme-mac-0.6.5.dmg" download>下载 喵了么 v0.6.5（约 92MB）</a>
       <div class="meta">
         文件名：<code>miaoleme-mac-0.6.5.dmg</code><br />
-        SHA-256：<code>7c112cc6fd87e183a8a7ca4f432ee99f9384c000c1fe870aabbe3c6ae9ca5c80</code>
+        SHA-256：<code>9497d86957ad470a0ea36477e67a3945af03e9e9e6742389e4e88f4c8ea1c7af</code>
       </div>
       <div class="note">
-        标准安装镜像（dmg）：双击打开，把 <code>喵了么</code> 拖进旁边的「Applications」文件夹，然后从启动台运行。<br />
-        首次打开若提示「无法验证开发者」：右键 App →「打开」→ 再点「打开」。<br />
-        需要 macOS 12+；Intel Mac 暂未提供。
+        <b>安装 3 步：</b><br />
+        1. 双击 dmg，把 <code>喵了么</code> 拖进「Applications」文件夹。<br />
+        2. 打开「终端」，粘贴这行回车（去掉系统的"已损坏/无法验证"拦截）：<br />
+        <code>xattr -cr /Applications/喵了么.app</code><br />
+        3. 从启动台双击「喵了么」即可运行。<br />
+        <span style="color:#9a7500">说明：应用未经 Apple 付费签名，macOS 会拦截；上面这行命令是官方认可的本地放行方式，安全。若没走第 2 步而直接打开提示「已损坏」，补做第 2 步即可。需要 macOS 12+；Intel Mac 暂未提供。</span>
       </div>
     </div>
 
