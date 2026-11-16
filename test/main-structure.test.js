@@ -204,6 +204,13 @@ test('渲染层：奔跑用硬切轮播 + dt 位移，不得 crossfade', () => {
   assert.match(step, /RunMath\.runStep\(dt\)/, '位移必须按 dt 推进（90 px/s）');
 });
 
+test('喂水有画面：自定义形象也生成喝水帧', () => {
+  assert.match(SRC, /key: 'drink', prompt: GEN_ACTION_PROMPTS\.drink, label: '喝水'/, 'GEN_REST 必须包含喝水帧');
+  assert.match(SRC, /drink: 'Turn the subject in this photo[^']*water bowl/, '喝水提示词存在');
+  // 喂水会给桌宠发 action:'drink'，没有这一帧时 playAction 直接 return（只有气泡没动作）
+  assert.match(SRC, /send\('pet-say', \{ action: 'drink'/);
+});
+
 test('渲染层：位移一律按 dt 推进，骨骼模式奔跑也要迈步', () => {
   const pet = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'pet.js'), 'utf-8');
   const step = pet.slice(pet.indexOf('const WALK_SPEED'), pet.indexOf('function stopWander('));

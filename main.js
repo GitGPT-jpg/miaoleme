@@ -218,7 +218,8 @@ const GEN_ACTION_PROMPTS = {
   roll:  'Turn the subject in this photo into an adorable chibi 3D mascot, Pixar/Blender style, keep key colors and features. Pose: rolling on its back playfully, belly up, limbs up in the air, happy relaxed expression. Anatomically correct cat: four legs and one tail, no extra limbs. Isolated on a FULLY TRANSPARENT background, PNG, centered, no ground, no baked shadow.',
   groom: 'Turn the subject in this photo into an adorable chibi 3D mascot, Pixar/Blender style, keep key colors and features. Pose: sitting and grooming itself, cute focused expression. Anatomically correct cat: four legs and one tail, no extra limbs. Isolated on a FULLY TRANSPARENT background, PNG, centered, no ground, no baked shadow.',
   eat:   'Turn the subject in this photo into an adorable chibi 3D mascot, Pixar/Blender style, keep key colors and features. Pose: head lowered eating from a small round food bowl placed in front, happy eating expression. Anatomically correct cat: four legs and one tail, no extra limbs. Isolated on a FULLY TRANSPARENT background, PNG, centered, no ground, no baked shadow.',
-  sleep: 'Turn the subject in this photo into an adorable chibi 3D mascot, Pixar/Blender style, keep key colors and features. Pose: lying down curled up sleeping, eyes closed peacefully, small white Zzz symbols floating above head. Anatomically correct cat: four legs and one tail, no extra limbs. Isolated on a FULLY TRANSPARENT background, PNG, centered, no ground, no baked shadow.'
+  sleep: 'Turn the subject in this photo into an adorable chibi 3D mascot, Pixar/Blender style, keep key colors and features. Pose: lying down curled up sleeping, eyes closed peacefully, small white Zzz symbols floating above head. Anatomically correct cat: four legs and one tail, no extra limbs. Isolated on a FULLY TRANSPARENT background, PNG, centered, no ground, no baked shadow.',
+  drink: 'Turn the subject in this photo into an adorable chibi 3D mascot, Pixar/Blender style, keep key colors and features. Pose: head lowered drinking water from a small round water bowl in front, tiny tongue lapping, happy contented expression. Anatomically correct cat: four legs and one tail, no extra limbs. Isolated on a FULLY TRANSPARENT background, PNG, centered, no ground, no baked shadow.'
 };
 
 // 奔跑序列提示词：公共前缀锁死「侧视朝右 + 身体水平 + 同一机位/比例/基线 + 透明底」，
@@ -532,6 +533,8 @@ const GEN_REST = [
   { key: 'roll',  prompt: GEN_ACTION_PROMPTS.roll,  label: '打滚' },
   { key: 'groom', prompt: GEN_ACTION_PROMPTS.groom, label: '舔毛' },
   { key: 'eat',   prompt: GEN_ACTION_PROMPTS.eat,   label: '吃饭' },
+  // 喂水是核心互动，自定义形象也要有低头喝水的画面（缺这帧时喂水只有气泡没动作）
+  { key: 'drink', prompt: GEN_ACTION_PROMPTS.drink, label: '喝水' },
   { key: 'sleep', prompt: GEN_ACTION_PROMPTS.sleep, label: '睡觉' }
 ].concat(GEN_RUN_TASKS).concat(RIG_PLAN.map((p) => ({ key: p.key, prompt: GEN_RIG_PROMPTS[p.key], label: p.label, rig: true })));
 
