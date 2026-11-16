@@ -93,7 +93,7 @@ const BUNDLED_ACTIONS = {
   groom: path.join(__dirname, 'assets', 'cat-3d-groom.png'),
   eat:   path.join(__dirname, 'assets', 'cat-3d-eat.png'),
   sleep: path.join(__dirname, 'assets', 'cat-3d-sleep.png'),
-  sleep2:path.join(__dirname, 'assets', 'cat-3d-sleep2.png'),
+  // 第二张睡姿只在 sequences 的 sleep 序列里用；放进 actions 没人读，白占 110KB payload
   drink: path.join(__dirname, 'assets', 'cat-3d-drink.png')
 };
 
@@ -205,7 +205,8 @@ function customFrames() {
     meta: ACTION_META,
     sequences: seq.actions,
     walkSeq: seq.walk,
-    runSeq: null            // 内置猫没有跑步真帧，渲染层用走路帧加速兜底
+    runSeq: seq.run,         // 内置猫的 8 帧跑步序列；素材不全时为 null，渲染层用走路帧兜底
+    generated: true          // 内置猫是 3D 素材，不是用户原图：别套 raw-photo 的白边卡片样式
   };
 }
 

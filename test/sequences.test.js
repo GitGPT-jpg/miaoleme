@@ -1,6 +1,19 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { ACTION_META, buildBundledSequences, frameIndices } = require('../lib/sequences');
+const { ACTION_META, RUN_FILES, buildBundledSequences, frameIndices } = require('../lib/sequences');
+const { RUN_FRAMES, RUN_FRAME_MS } = require('../lib/run');
+
+test('内置猫奔跑序列：8 帧齐备才成循环，缺帧退回 null', () => {
+  assert.equal(RUN_FILES.length, RUN_FRAMES);
+  assert.equal(RUN_FILES[0], 'cat-3d-run-1.png');
+  const full = buildBundledSequences((f) => 'data:' + f);
+  assert.equal(full.run.frames.length, RUN_FRAMES);
+  assert.equal(full.run.frameMs, RUN_FRAME_MS);
+  assert.deepEqual(full.run.frames, RUN_FILES.map((f) => 'data:' + f), '文件名顺序即播放顺序');
+  assert.equal(buildBundledSequences(() => null).run, null, '素材全缺时为 null');
+  assert.equal(buildBundledSequences((f) => /run-[123]\.png$/.test(f) ? 'data:' + f : null).run, null, '少于 4 帧凑不出步态');
+  assert.equal(buildBundledSequences((f) => /run-[1234]\.png$/.test(f) ? 'data:' + f : null).run.frames.length, 4);
+});
 
 test('动作元数据合法：时长/帧时长/过渡时长', () => {
   for (const [name, m] of Object.entries(ACTION_META)) {

@@ -186,6 +186,9 @@ test('奔跑帧写入序列槽位，不得混进动作帧', () => {
 test('生成帧必须下发 runSeq，且奔跑帧不走逐帧高度归一化', () => {
   const frames = extractFunctionBody('customFrames');
   assert.match(frames, /runSeq: customRunSeq\(\)/, '用户生成帧返回 runSeq');
+  assert.match(frames, /runSeq: seq\.run/, '内置猫返回自己的 8 帧跑步序列');
+  // 内置猫是 3D 素材而不是用户原图：raw-photo 会套白边卡片 + object-fit:cover，把透明帧裁掉
+  assert.match(frames, /generated: true\s*\/\/ 内置猫/, '内置猫必须标成 generated，避免被当成原图');
   const run = extractFunctionBody('customRunSeq');
   assert.match(run, /frames\.length >= 4/, '少于 4 帧凑不出步态，视为无序列');
   assert.match(run, /frameMs: RUN_FRAME_MS/);
