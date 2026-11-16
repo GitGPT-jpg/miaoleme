@@ -3,6 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
+const { ACTION_KEYS } = require('../lib/store');
 
 const SRC = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
 
@@ -135,17 +136,42 @@ test('回归：占位图检测（返回 1024 方形且与请求不符视为解�
 });
 
 test('奔跑序列：8 帧任务进入 GEN_REST，并带站立帧参考', () => {
+  const P = require('../lib/prompts');
   assert.equal(require('../lib/run').RUN_FRAMES, 8);
-  assert.match(SRC, /const GEN_RUN_POSES = \[/, '应有 8 个姿势提示词');
-  const poses = SRC.slice(SRC.indexOf('const GEN_RUN_POSES = ['), SRC.indexOf('const RUN_KEYS'));
+  assert.equal(P.RUN_POSES.length, 8, '应有 8 个姿势提示词');
   for (const tag of ['CONTACT-A', 'DOWN-A', 'PASSING-A', 'FLIGHT-A', 'CONTACT-B', 'DOWN-B', 'PASSING-B', 'FLIGHT-B']) {
-    assert.ok(poses.includes(tag), `缺少姿势 ${tag}`);
+    assert.ok(P.RUN_POSES.some((p) => p.startsWith(tag)), `缺少姿势 ${tag}`);
   }
-  assert.match(SRC, /STRICT SIDE VIEW facing RIGHT/, '公共前缀必须锁死侧视朝右');
-  assert.match(SRC, /body axis is perfectly HORIZONTAL/, '身体必须水平');
-  assert.match(SRC, /FULLY TRANSPARENT background/, '透明底');
+  assert.match(P.RUN_PREFIX, /STRICT SIDE VIEW facing RIGHT/, '公共前缀必须锁死侧视朝右');
+  assert.match(P.RUN_PREFIX, /body axis is perfectly HORIZONTAL/, '身体必须水平');
+  assert.match(P.RUN_PREFIX, /FULLY TRANSPARENT background/, '透明底');
+  // 每帧是独立一次生成，模型看不到别的帧：姿势描述不得跨帧指代
+  for (const pose of P.RUN_POSES) {
+    assert.equal(/mirror of/i.test(pose), false, '不得写「mirror of X」：' + pose.slice(0, 24));
+  }
+  assert.ok(P.RUN_TASKS.every((t) => t.useIdleRef === true), '奔跑帧需带站立帧做身份参考');
+  assert.deepEqual(P.RUN_KEYS, ['run-1', 'run-2', 'run-3', 'run-4', 'run-5', 'run-6', 'run-7', 'run-8']);
   assert.match(SRC, /\.concat\(GEN_RUN_TASKS\)/, 'GEN_REST 必须包含奔跑任务');
-  assert.match(SRC, /useIdleRef: true/, '奔跑帧需带站立帧做身份参考');
+});
+
+test('提示词只有一份：main.js 不再内联，走 lib/prompts.js', () => {
+  assert.match(SRC, /require\('\.\/lib\/prompts'\)/, 'main.js 从共享模块取提示词');
+  assert.equal(/Turn the person\/pet\/subject in this photo/.test(SRC), false, 'main.js 不应再内联提示词正文');
+  const tool = fs.readFileSync(path.join(__dirname, '..', 'tools', 'gen-frames.js'), 'utf-8');
+  assert.match(tool, /require\('\.\.\/lib\/prompts'\)/, '补帧工具也用同一份提示词');
+  assert.equal(/Turn the subject in this photo/.test(tool), false, '工具里不应再抄一份提示词');
+});
+
+test('生成的动作键必须在 store 白名单内（否则生成完被 sanitizer 丢掉）', () => {
+  const P = require('../lib/prompts');
+  const block = SRC.slice(SRC.indexOf('const GEN_REST = ['), SRC.indexOf('function hasFrameFor'));
+  const keys = [...block.matchAll(/key: '([a-z0-9-]+)'/g)].map((m) => m[1])
+    .filter((k) => k !== 'walk' && !k.startsWith('rig-') && !k.startsWith('run-'));
+  assert.ok(keys.length >= 5, '至少 5 个动作帧');
+  for (const k of keys) {
+    assert.ok(ACTION_KEYS.includes(k), `动作键 ${k} 不在 store 白名单里，重启后会被丢掉`);
+    assert.ok(typeof P.ACTIONS[k] === 'string' && P.ACTIONS[k].length > 80, `缺少 ${k} 的提示词`);
+  }
 });
 
 test('奔跑帧写入序列槽位，不得混进动作帧', () => {
@@ -205,8 +231,9 @@ test('渲染层：奔跑用硬切轮播 + dt 位移，不得 crossfade', () => {
 });
 
 test('喂水有画面：自定义形象也生成喝水帧', () => {
+  const P = require('../lib/prompts');
   assert.match(SRC, /key: 'drink', prompt: GEN_ACTION_PROMPTS\.drink, label: '喝水'/, 'GEN_REST 必须包含喝水帧');
-  assert.match(SRC, /drink: 'Turn the subject in this photo[^']*water bowl/, '喝水提示词存在');
+  assert.match(P.ACTIONS.drink, /water bowl/, '喝水提示词存在');
   // 喂水会给桌宠发 action:'drink'，没有这一帧时 playAction 直接 return（只有气泡没动作）
   assert.match(SRC, /send\('pet-say', \{ action: 'drink'/);
 });

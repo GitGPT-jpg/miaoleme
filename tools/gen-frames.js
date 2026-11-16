@@ -1,9 +1,12 @@
 // 补帧工具：为某张照片生成全套 3D 帧（站立/行走/打滚/舔毛/吃饭/睡觉/喝水），
 // 写入 userData 并更新 zerobreak-store.json。用法：node tools/gen-frames.js <照片路径>
+// 注意：本工具只做基础姿势，不生成 8 帧奔跑序列（那组需要整组归一化，走应用内
+// `GEN_RUN=1 npm start` / 面板「重试失败项」），也不做质量闸门与帧归一化。
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const https = require('https');
+const PROMPTS = require('../lib/prompts');
 
 const ROOT = path.join(__dirname, '..');
 const USER_DATA = path.join(os.homedir(), 'Library/Application Support/zerobreak-desktop-pet');
@@ -43,22 +46,15 @@ function extractB64(resp) {
   return null;
 }
 
-const PROMPTS = {
-  idle: 'Turn the subject in this photo into an adorable chibi 3D mascot character, Pixar/Blender toy-figure style, big round head, large glossy expressive eyes, soft shading, keep the subject\'s key colors and recognizable features. Full body standing in a cute 3/4 front pose, soft studio lighting with subtle rim light, glossy clean render. Isolated on a FULLY TRANSPARENT background, PNG, subject centered, no ground, no baked shadow, high detail.',
-  walk: 'Turn the subject in this photo into an adorable chibi 3D mascot character, Pixar/Blender toy-figure style, big round head, large glossy eyes, keep the subject\'s key colors and recognizable features. Full body in a cute MID-WALK stride pose seen from a side 3/4 angle, one foot/paw lifted forward, playful happy expression, soft studio lighting, glossy clean render. Isolated on a FULLY TRANSPARENT background, PNG, subject centered, no ground, no baked shadow, high detail.',
-  roll: 'Turn the subject in this photo into an adorable chibi 3D mascot, Pixar/Blender style, keep key colors and features. Pose: rolling on its back playfully, belly up, limbs up in the air, happy relaxed expression. Isolated on a FULLY TRANSPARENT background, PNG, centered, no ground, no baked shadow.',
-  groom: 'Turn the subject in this photo into an adorable chibi 3D mascot, Pixar/Blender style, keep key colors and features. Pose: sitting and grooming itself, cute focused expression. Isolated on a FULLY TRANSPARENT background, PNG, centered, no ground, no baked shadow.',
-  eat: 'Turn the subject in this photo into an adorable chibi 3D mascot, Pixar/Blender style, keep key colors and features. Pose: head lowered eating from a small round food bowl placed in front, happy eating expression. Isolated on a FULLY TRANSPARENT background, PNG, centered, no ground, no baked shadow.',
-  sleep: 'Turn the subject in this photo into an adorable chibi 3D mascot, Pixar/Blender style, keep key colors and features. Pose: lying down curled up sleeping, eyes closed peacefully, small white Zzz symbols floating above head. Isolated on a FULLY TRANSPARENT background, PNG, centered, no ground, no baked shadow.',
-  drink: 'Turn the subject in this photo into an adorable chibi 3D mascot, Pixar/Blender style, keep key colors and features. Pose: head lowered drinking water from a small round water bowl in front, tiny tongue lapping, happy contented expression. Isolated on a FULLY TRANSPARENT background, PNG, centered, no ground, no baked shadow.'
-};
+// 提示词与应用共用一份（lib/prompts.js），避免工具里的描述与主进程漂移
+const PROMPT_OF = Object.assign({ idle: PROMPTS.IDLE, walk: PROMPTS.WALK }, PROMPTS.ACTIONS);
 
 async function genFrame(cfg, srcPath, key) {
   const b64 = fs.readFileSync(srcPath).toString('base64');
   const ext = path.extname(srcPath).toLowerCase();
   const mime = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
   const payload = {
-    contents: [{ role: 'USER', parts: [{ inline_data: { mime_type: mime, data: b64 } }, { text: PROMPTS[key] }] }],
+    contents: [{ role: 'USER', parts: [{ inline_data: { mime_type: mime, data: b64 } }, { text: PROMPT_OF[key] }] }],
     resolution: '2K',
     aspectRatio: '1:1'
   };
