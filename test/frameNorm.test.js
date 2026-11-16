@@ -22,7 +22,10 @@ test('缩放比例：目标高度、上下限钳制', () => {
   assert.equal(heightScale(170, 340), 2);
   assert.equal(heightScale(0, 340), 1);
   assert.equal(heightScale(1, 340), 3, '上限 3');
-  assert.equal(heightScale(2000, 340), 0.5, '下限 0.5');
+  // 2K 源图必须真的缩到目标高度：下限只挡异常值，不能把 340/1300 夹成 0.5
+  assert.ok(Math.abs(heightScale(1300, 340) - 340 / 1300) < 1e-9, '大图按目标高度缩');
+  assert.ok(Math.abs(heightScale(2000, 340) - 0.17) < 1e-9);
+  assert.equal(heightScale(1e6, 340), 0.05, '下限 0.05 只用于挡异常帧');
 });
 
 test('alpha 统计：质心落在像素重心而非包围盒中心', () => {

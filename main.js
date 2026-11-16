@@ -489,6 +489,23 @@ function normalizeRunSequence() {
   return done;
 }
 
+// 已有姿势帧重做归一化（纯本地计算）：早期版本的缩放下限把 2K 源图留在 ~600px，
+// 帧在界面上的大小只看长宽比，所以缩到 340px 高不改观感，但 dataURL 体积能降一半以上
+function renormalizePoseFrames() {
+  const files = [state.customGenIdle, state.customGenWalk]
+    .concat(Object.values(state.customGenActions || {}))
+    .filter((p) => p && fs.existsSync(p));
+  let done = 0;
+  for (const f of files) {
+    try {
+      const before = fs.statSync(f).size;
+      normalizePoseFrame(f);
+      if (fs.statSync(f).size !== before) done++;
+    } catch (e) { /* 单帧失败不影响其余 */ }
+  }
+  return done;
+}
+
 // ---------- 生成任务：隔离、并发、重试、取消、可查询 ----------
 let genJob = null;
 let genSeq = 0;
@@ -1437,10 +1454,12 @@ function retryMissingFrames() {
     RUN_KEYS.forEach((k) => { if (!only.includes(k)) only.push(k); });
   }
   if (!only.length) {
-    // 没有缺帧时顺手把奔跑序列重做一遍归一化与播放顺序（纯本地计算，不调用生成服务）
+    // 没有缺帧时顺手把素材重做一遍归一化（纯本地计算，不调用生成服务）：
+    // 奔跑序列重算整组缩放与播放顺序，姿势帧按目标高度收一遍体积
     const fixed = normalizeRunSequence();
-    if (fixed > 0) { dataUrlCache.clear(); broadcastCustomImage(); }
-    return { ok: true, nothingToDo: true, renormalized: fixed };
+    const shrunk = renormalizePoseFrames();
+    if (fixed > 0 || shrunk > 0) { dataUrlCache.clear(); broadcastCustomImage(); }
+    return { ok: true, nothingToDo: true, renormalized: fixed, reshrunk: shrunk };
   }
   const job = startGenJob(src, `retry-${Date.now()}`, only);
   return { ok: true, job: jobSnapshot(job) };

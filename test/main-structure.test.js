@@ -208,6 +208,7 @@ test('奔跑序列按整组重做：缺一帧就全部重生成', () => {
   const retry = extractFunctionBody('retryMissingFrames');
   assert.match(retry, /RUN_KEYS\.some\(\(k\) => only\.includes\(k\)\)/, '重试时奔跑序列整组入列');
   assert.match(retry, /const fixed = normalizeRunSequence\(\)/, '无缺帧时也重做归一化与播放顺序（不调生成服务）');
+  assert.match(retry, /const shrunk = renormalizePoseFrames\(\)/, '无缺帧时顺手把姿势帧按目标高度收一遍体积');
 });
 
 test('播放顺序由实测体长决定，不信提示词标号', () => {
