@@ -175,3 +175,35 @@ test('动作帧白名单：只接受已知动作键', () => {
   assert.deepEqual(s.customGenActions, { roll: '/tmp/r.png' }, '奔跑帧不走 actions，走 customGenRunSeq');
   assert.deepEqual(ACTION_KEYS, ['roll', 'groom', 'eat', 'sleep', 'drink']);
 });
+
+test('未知顶层字段原样保留（同一 userData 可能被别的分支构建读写）', () => {
+  const s = normalizeState({
+    form: 'dragon',                                  // 已知字段照旧纠正
+    health: { hp: 7, lastFed: 123 },
+    hunt: { wins: 2, nested: { deep: [1, 2, 3] } },
+    futureFlag: true
+  });
+  assert.equal(s.form, 'custom');
+  assert.deepEqual(s.health, { hp: 7, lastFed: 123 }, '别的分支的字段不得被抹掉');
+  assert.deepEqual(s.hunt, { wins: 2, nested: { deep: [1, 2, 3] } });
+  assert.equal(s.futureFlag, true);
+  const again = normalizeState(s);
+  assert.deepEqual(again.health, s.health, '多轮读写保持稳定');
+});
+
+test('未知字段有上限：数量、体积、不可序列化值', () => {
+  const many = {};
+  for (let i = 0; i < 40; i++) many['x' + i] = i;
+  const kept = Object.keys(normalizeState(many)).filter((k) => /^x\d+$/.test(k));
+  assert.equal(kept.length, 24, '最多保留 24 个未知字段');
+
+  const big = normalizeState({ blob: 'a'.repeat(70 * 1024) });
+  assert.equal('blob' in big, false, '超过 64KB 的未知字段丢弃');
+
+  const cyclic = { ring: {} };
+  cyclic.ring.self = cyclic.ring;
+  assert.equal('ring' in normalizeState(cyclic), false, '含循环引用的字段跳过，不抛异常');
+
+  assert.equal('fn' in normalizeState({ fn: () => 1 }), false, '函数不可序列化，跳过');
+  assert.equal(normalizeState({ customGenRunSeq: ['/a.png'] }).customGenRunSeq.length, 1, '已知字段不受影响');
+});
