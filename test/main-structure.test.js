@@ -204,6 +204,25 @@ test('渲染层：奔跑用硬切轮播 + dt 位移，不得 crossfade', () => {
   assert.match(step, /RunMath\.runStep\(dt\)/, '位移必须按 dt 推进（90 px/s）');
 });
 
+test('渲染层：位移一律按 dt 推进，骨骼模式奔跑也要迈步', () => {
+  const pet = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'pet.js'), 'utf-8');
+  const step = pet.slice(pet.indexOf('const WALK_SPEED'), pet.indexOf('function stopWander('));
+  assert.match(step, /RunMath\.runStep\(dt, WALK_SPEED\)/, '走路必须按 dt 推进（每帧固定像素会随刷新率变速）');
+  assert.equal(/const speed = 1\.6/.test(pet), false, '不得保留每帧固定像素的走路速度');
+  const rig = pet.slice(pet.indexOf('const running = mode'), pet.indexOf('// 尾巴'));
+  assert.match(rig, /const walking = mode === 'walk' \|\| running/, '骨骼模式下奔跑也走迈步分支');
+  assert.match(rig, /const gait = running \? 1\.8 : 1/, '奔跑步频更快');
+});
+
+test('渲染层：冲刺目标夹在可见工作区内，隐藏时收尾', () => {
+  const pet = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'pet.js'), 'utf-8');
+  const target = pet.slice(pet.indexOf('function runTargetX('), pet.indexOf('function startRunDash('));
+  assert.match(target, /Math\.max\(left, Math\.min\(right, target\)\)/, '落点必须夹进可见区，否则贴边原地踏步');
+  assert.match(target, /sc\.availLeft/, '多屏要用 availLeft 定位当前屏幕');
+  const vis = pet.slice(pet.indexOf("document.addEventListener('visibilitychange'"), pet.indexOf("pet.addEventListener('mouseenter'"));
+  assert.match(vis, /if \(mode === 'run'\) stopRun\(\)/, '窗口隐藏时结束奔跑，避免再露面时定格在跑步帧');
+});
+
 test('渲染层：真帧序列下 CSS 不叠加缩放步态', () => {
   const css = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'pet.css'), 'utf-8');
   assert.match(css, /#pet\.form-custom\.running \.pet-photo-img \{[^}]*animation: none/, '奔跑时关闭浮动/摇摆动画');

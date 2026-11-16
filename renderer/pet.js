@@ -41,7 +41,7 @@ let actTimer = null;
 let sleepCycleTimer = null;
 let walkTimer = null;
 let runTimer = null;
-let runLast = 0;
+let moveLast = 0;        // 上一帧位移时间戳（走路/奔跑共用，两者互斥）
 let rafId = null;
 let rigCanvas = document.getElementById('rig-canvas');
 let rctx = rigCanvas.getContext('2d');
@@ -355,17 +355,19 @@ function drawRig(t) {
   // 瞳孔微动（saccade）：随机小幅跳跃
   if (t > saccade.nextAt) saccade = WarpMath.nextSaccade(t);
   const sacc = t < saccade.until ? saccade : { dx: 0, dy: 0 };
-  const walking = mode === 'walk';
+  const running = mode === 'run';
+  const walking = mode === 'walk' || running;   // 奔跑也是迈步，只是更快
   const acting = mode === 'act';
-  const bobHz = walking ? 5.5 : 1.3;
-  const bobAmp = walking ? 7 : 3;
+  const gait = running ? 1.8 : 1;               // 奔跑：步频与起伏都更大
+  const bobHz = walking ? 5.5 * gait : 1.3;
+  const bobAmp = walking ? (running ? 9 : 7) : 3;
   const bob = Math.sin(t * bobHz) * bobAmp;
   const breath = 1 + (Math.sin(t * 1.15) * 0.014 + Math.sin(t * 0.43 + 1.2) * 0.008);
-  const sway = Math.sin(t * (walking ? 4.2 : 0.8)) * (walking ? 2.4 : 1.1) + gaze.x * 2;
+  const sway = Math.sin(t * (walking ? 4.2 * gait : 0.8)) * (walking ? 2.4 : 1.1) + gaze.x * 2;
 
   // 尾巴（底层，绕根部摆动）
   const tailTarget = RIG.tail.base
-    + Math.sin(t * (walking ? 4.8 : 1.05)) * (walking ? 0.3 : 0.17)
+    + Math.sin(t * (walking ? 4.8 * gait : 1.05)) * (walking ? 0.3 : 0.17)
     + gaze.x * 0.12;
   tailSpring = WarpMath.stepSpring(tailSpring, tailTarget, dt, walking ? 180 : 90, 14);
   rctx.save();
@@ -391,7 +393,7 @@ function drawRig(t) {
   rctx.rotate(
     Math.sin(t * (walking ? 3.6 : 0.75)) * (walking ? 0.055 : 0.028) + gaze.x * 0.08
   );
-  rctx.translate(0, Math.sin(t * (walking ? 5.2 : 1.4)) * (walking ? 5 : 2.4));
+  rctx.translate(0, Math.sin(t * (walking ? 5.2 * gait : 1.4)) * (walking ? 5 : 2.4));
   if (acting) rctx.rotate(Math.sin(t * 2.4) * 0.02);
   // 头部 2×2 网格 warp：跟随视线轻微变形，让头部显得「活」
   // drawHeadWarped 顶部对齐 -h，补 0.18h 保持与原 drawImage(-h*0.82) 锚点一致
@@ -472,7 +474,13 @@ document.addEventListener('mousemove', (e) => {
 });
 window.addEventListener('mouseup', endDrag);
 window.addEventListener('blur', endDrag);
-document.addEventListener('visibilitychange', () => { if (document.hidden) endDrag(); });
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) return;
+  endDrag();
+  // 窗口被遮挡/切到别的 Space 时浏览器会冻结计时器与 rAF：
+  // 奔跑留在半途会让猫下次露面时定格在跑步帧，这里直接收尾回站立。
+  if (mode === 'run') stopRun();
+});
 
 // ---------- 悬浮菜单 / 徽标 ----------
 pet.addEventListener('mouseenter', () => menu.classList.remove('hidden'));
@@ -546,8 +554,9 @@ function setRunFrame(on) {
   }, frameMs);
 }
 
-// 冲刺目标：优先朝屏幕中间跑，避免贴边后原地踏步（主进程会把窗口夹回工作区）
-// 多屏下 availLeft 才是当前屏幕在全局坐标里的左边界，直接用 availWidth 会把副屏算错
+// 冲刺目标：优先朝屏幕中间跑，并把落点夹进可见工作区——
+// 主进程会把窗口夹回工作区，目标跑到屏幕外的话猫会在边上原地踏步到冲刺结束。
+// 多屏下 availLeft 才是当前屏幕在全局坐标里的左边界，直接用 availWidth 会把副屏算错。
 function runTargetX(fromX) {
   const dist = 150 + Math.random() * 120;
   const sc = window.screen || {};
@@ -556,7 +565,8 @@ function runTargetX(fromX) {
   let dir = Math.random() < 0.5 ? -1 : 1;
   if (fromX + dist > right) dir = -1;
   else if (fromX - dist < left) dir = 1;
-  return Math.round(fromX + dir * dist);
+  const target = fromX + dir * dist;
+  return Math.round(Math.max(left, Math.min(right, target)));
 }
 
 function startRunDash() {
@@ -565,15 +575,15 @@ function startRunDash() {
   pet.classList.toggle('face-left', targetX < cur.x);   // 向左跑：scaleX(-1)
   mode = 'run';
   setRunFrame(true);
-  runLast = performance.now();
+  moveLast = performance.now();
   stepRun({ x: targetX, y: cur.y });
 }
 
 function stepRun(target) {
   if (mode !== 'run' || drag) { stopRun(); return; }
   const now = performance.now();
-  const dt = (now - runLast) / 1000;
-  runLast = now;
+  const dt = (now - moveLast) / 1000;
+  moveLast = now;
   const dx = target.x - cur.x;
   if (Math.abs(dx) < 2) { stopRun(); return; }
   cur.x += Math.sign(dx) * Math.min(RunMath.runStep(dt), Math.abs(dx));
@@ -662,23 +672,27 @@ async function startWander() {
   pet.classList.toggle('face-left', dx < 0);
   mode = 'walk';
   setWalkFrame(true);
+  moveLast = performance.now();
   stepTo(target);
 }
 
 let lastMoveAt = 0;
+const WALK_SPEED = 96;   // px/s：原先是每帧 1.6px，在 120Hz 屏上会跑成两倍速
 function stepTo(target) {
   if (mode !== 'walk' || drag) { stopWander(); return; }
+  const now = performance.now();
+  const dt = (now - moveLast) / 1000;
+  moveLast = now;
   const dx = target.x - cur.x;
   const dy = target.y - cur.y;
   const dist = Math.hypot(dx, dy);
   if (dist < 2) { stopWander(); return; }
-  const speed = 1.6;
-  cur.x += (dx / dist) * Math.min(speed, dist);
-  cur.y += (dy / dist) * Math.min(speed, dist);
+  const step = Math.min(RunMath.runStep(dt, WALK_SPEED), dist);
+  cur.x += (dx / dist) * step;
+  cur.y += (dy / dist) * step;
   // 位置 IPC 限流到 ~30Hz：视觉依旧平滑，跨进程调用减半
-  const t = performance.now();
-  if (t - lastMoveAt >= 33) {
-    lastMoveAt = t;
+  if (now - lastMoveAt >= 33) {
+    lastMoveAt = now;
     window.api.setWinPos(Math.round(cur.x), Math.round(cur.y));
   }
   rafId = requestAnimationFrame(() => stepTo(target));

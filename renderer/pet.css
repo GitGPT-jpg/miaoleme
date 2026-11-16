@@ -575,10 +575,10 @@ html, body {
   animation: none;
   transform: none;
 }
-/* 真帧是横向画布（约 2:1），展示框放宽到接近窗口宽度，猫才看得清腿 */
+/* 真帧是横向画布（约 1.7:1），展示框放宽到接近窗口宽度，猫才看得清腿 */
 #pet.form-custom.running.run-seq .pet-photo-img {
   width: 200px;
-  max-height: 120px;
+  max-height: 130px;
 }
 #pet.form-custom.running.face-left .pet-photo-img { transform: scaleX(-1); }
 #pet.form-custom.running .pet-shadow {

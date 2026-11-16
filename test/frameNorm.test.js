@@ -84,6 +84,18 @@ test('序列整组摆放：共享缩放 + 脚底同基线 + 质心同竖线', ()
   }
 });
 
+test('序列公用画布：只缩不放，源帧比目标小时按原尺寸重排', () => {
+  const stats = [
+    { x: 0, y: 0, w: 300, h: 190, cx: 150 },
+    { x: 0, y: 0, w: 260, h: 150, cx: 130 }
+  ];
+  const c = seqCanvas(stats, 230, 6);   // targetH 230 > 最高帧 190
+  assert.equal(c.h, 190 + 12, '不得放大到 230');
+  const plan = seqPlacements(stats, c.w, c.h, 230, 6);
+  assert.ok(plan.scale <= 1 + 1e-9, `缩放不得 > 1（实际 ${plan.scale}）`);
+  assert.equal(plan.items[0].h, 190, '最高帧保持原始高度');
+});
+
 test('序列整组摆放：超宽序列按画布缩放，空输入返回 null', () => {
   assert.equal(seqPlacements([], 440, 220, 190), null);
   assert.equal(seqPlacements(null, 440, 220, 190), null);

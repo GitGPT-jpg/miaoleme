@@ -468,7 +468,9 @@ function normalizePoseFrame(file, targetH = 340) {
 
 // 奔跑序列整组归一化：所有帧共享一个缩放系数，按质心横向对齐、脚底对齐同一基线，
 // 落到同一张贴合猫实际范围的画布（画布统一才不会帧间忽大忽小/上下跳；贴合才够大）。
-const RUN_TARGET_H = 190;       // 水平姿态的身体高度，约等于站立帧 340 的同一只猫
+// 目标高度 230 → 画布约 410px 宽，正好等于渲染层 200 CSS px 展示框在 2x 屏上的物理像素，
+// 不会二次放大糊掉；源帧比目标小时只重排不放大（见 seqCanvas）。
+const RUN_TARGET_H = 230;
 const RUN_CANVAS_MAX_W = 520;
 function normalizeRunSequence() {
   const paths = (state.customGenRunSeq || []).filter((p) => p && fs.existsSync(p));
