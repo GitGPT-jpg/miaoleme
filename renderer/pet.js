@@ -597,8 +597,16 @@ function stepRun(target) {
 function stopRun() {
   if (mode === 'run') mode = 'idle';
   if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
-  setRunFrame(false);
-  if (!rigOn && currentForm === 'custom' && F.idle.length) crossfadeTo(F.idle[0], 320);
+  clearInterval(runTimer);
+  runTimer = null;
+  if (!rigOn && currentForm === 'custom' && F.idle.length) {
+    // 先淡回站立帧，等淡完再摘掉 .running：奔跑展示框比站立宽，
+    // 立刻摘掉会在淡化中途把跑步帧缩一下，看着像抽一下
+    crossfadeTo(F.idle[0], 320);
+    setTimeout(() => { if (mode !== 'run') setRunFrame(false); }, 340);
+  } else {
+    setRunFrame(false);
+  }
   scheduleWander();
 }
 
