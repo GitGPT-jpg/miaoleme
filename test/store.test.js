@@ -170,10 +170,15 @@ test('奔跑序列：非数组与全空输入收敛为空数组', () => {
   );
 });
 
-test('动作帧白名单：只接受已知动作键', () => {
-  const s = normalizeState({ customGenActions: { roll: '/tmp/r.png', run: '/tmp/x.png', fly: '/tmp/f.png' } });
-  assert.deepEqual(s.customGenActions, { roll: '/tmp/r.png' }, '奔跑帧不走 actions，走 customGenRunSeq');
-  assert.deepEqual(ACTION_KEYS, ['roll', 'groom', 'eat', 'sleep', 'drink', 'stretch']);
+test('动作帧：本构建的动作键 + 别的分支写入的动作键都保留', () => {
+  const s = normalizeState({ customGenActions: { roll: '/tmp/r.png', run: '/tmp/x.png', fly: '/tmp/f.png', bad: 5 } });
+  assert.deepEqual(s.customGenActions, { roll: '/tmp/r.png', run: '/tmp/x.png', fly: '/tmp/f.png' },
+    '不认识的动作键也要留着，否则清理会把别的构建的素材删掉');
+  assert.equal(normalizeState({ customGenActions: { '../etc/passwd': '/tmp/x.png' } }).customGenActions, null, '非法键名丢弃');
+  assert.deepEqual(ACTION_KEYS, ['roll', 'groom', 'eat', 'sleep', 'drink', 'stretch'], '本构建会生成的动作集');
+  const many = {};
+  for (let i = 0; i < 40; i++) many['act' + i] = '/tmp/a' + i + '.png';
+  assert.equal(Object.keys(normalizeState({ customGenActions: many }).customGenActions).length, 24, '动作键数量上限 24');
 });
 
 test('未知顶层字段原样保留（同一 userData 可能被别的分支构建读写）', () => {
