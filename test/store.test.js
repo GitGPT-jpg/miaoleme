@@ -3,7 +3,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { normalizeState, readState, DEFAULT_STATE } = require('../lib/store');
+const { normalizeState, readState, DEFAULT_STATE, ACTION_KEYS } = require('../lib/store');
 
 const tmpFile = (content) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'miaoleme-test-'));
@@ -144,4 +144,34 @@ test('饭点请求日期与稍后提醒时间：归一化', () => {
   assert.equal(bad.feed.mealRequestDate, '');
   assert.equal(bad.feed.mealSnoozeUntil, 0);
   assert.equal(bad.feed.mealSlot, null);
+});
+
+test('奔跑序列：默认空、合法路径保留、缺帧留 null、上限 8 帧', () => {
+  assert.deepEqual(normalizeState({}).customGenRunSeq, []);
+  const paths = Array.from({ length: 8 }, (_, i) => `/tmp/pet-gen-run-${i + 1}.png`);
+  assert.deepEqual(normalizeState({ customGenRunSeq: paths }).customGenRunSeq, paths);
+  assert.deepEqual(
+    normalizeState({ customGenRunSeq: paths.concat(['/tmp/extra.png']) }).customGenRunSeq,
+    paths,
+    '超出 8 帧的部分被截断'
+  );
+  const holes = normalizeState({ customGenRunSeq: ['/tmp/a.png', 5, null, '/tmp/d.png'] }).customGenRunSeq;
+  assert.deepEqual(holes, ['/tmp/a.png', null, null, '/tmp/d.png'], '非法项留 null，保持槽位对应');
+});
+
+test('奔跑序列：非数组与全空输入收敛为空数组', () => {
+  for (const bad of [null, 'x', 5, {}, [], [null, null], ['', 0]]) {
+    assert.deepEqual(normalizeState({ customGenRunSeq: bad }).customGenRunSeq, []);
+  }
+  assert.deepEqual(
+    normalizeState({ customGenRunSeq: ['/tmp/a.png', null, null] }).customGenRunSeq,
+    ['/tmp/a.png'],
+    '尾部空槽收敛掉'
+  );
+});
+
+test('动作帧白名单：只接受已知动作键', () => {
+  const s = normalizeState({ customGenActions: { roll: '/tmp/r.png', run: '/tmp/x.png', fly: '/tmp/f.png' } });
+  assert.deepEqual(s.customGenActions, { roll: '/tmp/r.png' }, '奔跑帧不走 actions，走 customGenRunSeq');
+  assert.deepEqual(ACTION_KEYS, ['roll', 'groom', 'eat', 'sleep', 'drink']);
 });

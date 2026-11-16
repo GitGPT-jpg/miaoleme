@@ -568,4 +568,41 @@ html, body {
   50% { transform: scale(1.07); }
 }
 
+/* ---------- 奔跑 ---------- */
+/* 跑步序列帧自带腿部交替与身体收拢/伸展，CSS 不再叠加任何浮动/摇摆/缩放，
+   否则两套运动打架，猫会看着像被整体拉扯。只保留影子节奏做落地感。 */
+#pet.form-custom.running .pet-photo-img {
+  animation: none;
+  transform: none;
+}
+/* 真帧是横向画布（约 2:1），展示框放宽到接近窗口宽度，猫才看得清腿 */
+#pet.form-custom.running.run-seq .pet-photo-img {
+  width: 200px;
+  max-height: 120px;
+}
+#pet.form-custom.running.face-left .pet-photo-img { transform: scaleX(-1); }
+#pet.form-custom.running .pet-shadow {
+  width: 104px;
+  animation: shadowRun 0.33s ease-in-out infinite;
+}
+@keyframes shadowRun {
+  0%, 100% { transform: scale(1); opacity: 0.2; }
+  50%      { transform: scale(0.84); opacity: 0.11; }
+}
+/* 没有真跑步帧时（内置猫/原图）用走路帧加速兜底，这时补一点上下起伏充当步态 */
+#pet.form-custom.running:not(.run-seq) .pet-photo-img {
+  animation: runGallop 0.24s ease-in-out infinite;
+}
+#pet.form-custom.running:not(.run-seq).face-left .pet-photo-img {
+  animation: runGallopL 0.24s ease-in-out infinite;
+}
+@keyframes runGallop {
+  0%, 100% { transform: translateY(0) scale(1, 1); }
+  50%      { transform: translateY(-4px) scale(1.03, 0.97); }
+}
+@keyframes runGallopL {
+  0%, 100% { transform: scaleX(-1) translateY(0); }
+  50%      { transform: scaleX(-1) translateY(-4px) scale(1.03, 0.97); }
+}
+
 .hidden { opacity: 0; pointer-events: none; }

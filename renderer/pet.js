@@ -29,7 +29,7 @@ const ACTIONS = {
 };
 const ACT_CLASSES = ['act-roll', 'act-groom', 'act-eat', 'act-sleep', 'act-drink', 'act-stretch'];
 
-// ---------- 行为状态（单一所有权：drag > act > walk > idle） ----------
+// ---------- 行为状态（单一所有权：drag > act > run > walk > idle） ----------
 // mode 是唯一的移动/动作控制权；session 用于让过期的异步回调失效
 let currentForm = 'custom';
 let displayMode = 'photo';
@@ -40,6 +40,8 @@ let wanderTimer = null;
 let actTimer = null;
 let sleepCycleTimer = null;
 let walkTimer = null;
+let runTimer = null;
+let runLast = 0;
 let rafId = null;
 let rigCanvas = document.getElementById('rig-canvas');
 let rctx = rigCanvas.getContext('2d');
@@ -54,13 +56,14 @@ function clearBehaviorTimers() {
   clearTimeout(actTimer); actTimer = null;
   clearInterval(sleepCycleTimer); sleepCycleTimer = null;
   clearInterval(walkTimer); walkTimer = null;
+  clearInterval(runTimer); runTimer = null;
   if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
 }
 
 function setIdle() {
   clearBehaviorTimers();
   mode = 'idle';
-  pet.classList.remove('walking', 'acting', ...ACT_CLASSES);
+  pet.classList.remove('walking', 'running', 'run-seq', 'acting', ...ACT_CLASSES);
 }
 
 function applyForm(form) {
@@ -80,7 +83,7 @@ function applyForm(form) {
 }
 
 // ---------- 帧集合与双层交叉淡化（最新目标必胜） ----------
-let F = { idle: [], walk: [], happy: null, actions: {}, meta: {}, sequences: {}, walkSeq: null };
+let F = { idle: [], walk: [], happy: null, actions: {}, meta: {}, sequences: {}, walkSeq: null, runSeq: null };
 let visLayer = 'a';
 let activeUrl = null;
 let fading = false;
@@ -123,6 +126,34 @@ function crossfadeTo(url, ms = 450) {
   if (!fading) runFade(ms);
 }
 
+// 硬切：奔跑帧间隔只有 70–90ms，交叉淡化会糊成一团，直接换可见层的图
+function hardCutTo(url) {
+  if (!url) return;
+  const vis = visLayer === 'a' ? photoA : photoB;
+  const other = visLayer === 'a' ? photoB : photoA;
+  vis.style.transition = 'none';
+  other.style.transition = 'none';
+  vis.style.opacity = '1';
+  other.style.opacity = '0';
+  if (vis.src !== url) vis.src = url;
+  activeUrl = url;
+  fadeTarget = url;
+  fading = false;
+}
+
+// 奔跑帧预解码：首个循环不闪白（data URL 已在内存，解码一次即可）
+let preloadedRun = [];
+function preloadRunFrames(seq) {
+  preloadedRun = [];
+  if (!seq || !Array.isArray(seq.frames)) return;
+  seq.frames.forEach((u) => {
+    if (!u) return;
+    const im = new Image();
+    im.src = u;
+    preloadedRun.push(im);
+  });
+}
+
 function loadCustomImage() {
   const mySession = session;
   window.api.getCustomFrames().then((frames) => {
@@ -135,8 +166,10 @@ function loadCustomImage() {
       actions: frames.actions || {},
       meta: frames.meta || {},
       sequences: frames.sequences || {},
-      walkSeq: frames.walkSeq || null
+      walkSeq: frames.walkSeq || null,
+      runSeq: frames.runSeq || null
     };
+    preloadRunFrames(F.runSeq);
     if (F.idle[0]) {
       photoA.src = F.idle[0];
       photoA.style.opacity = '1';
@@ -394,7 +427,7 @@ function beginDrag(e) {
   drag = { ready: false, moved: false, mx: e.screenX, my: e.screenY, wx: 0, wy: 0 };
   mode = 'drag';
   clearBehaviorTimers();
-  pet.classList.remove('walking');
+  pet.classList.remove('walking', 'running', 'run-seq');
   pet.classList.add('dragging');
   window.api.getWinPos().then((p) => {
     // 过期初始化：拖拽已结束或形态已切换 → 丢弃
@@ -493,6 +526,84 @@ function setWalkFrame(on) {
   }
 }
 
+// ---------- 奔跑：真帧序列硬切轮播 + 90px/s 横向位移 ----------
+// 腿部交替与身体收拢/伸展全在帧里，所以 CSS 侧不再叠加缩放模拟（见 .run-seq）
+function setRunFrame(on) {
+  clearInterval(runTimer);
+  runTimer = null;
+  if (rigOn) { pet.classList.toggle('running', on); return; }
+  if (!on) { pet.classList.remove('running', 'run-seq'); return; }
+  const walkFrames = (F.walkSeq && F.walkSeq.frames && F.walkSeq.frames.length > 1) ? F.walkSeq.frames : F.walk;
+  const { frames, frameMs, real } = RunMath.pickRunFrames(F.runSeq, walkFrames);
+  pet.classList.add('running');
+  pet.classList.toggle('run-seq', real);
+  if (!frames.length) return;
+  const start = performance.now();
+  hardCutTo(frames[0]);
+  runTimer = setInterval(() => {
+    if (frames.length < 2) return;
+    hardCutTo(frames[RunMath.runFrameIndex(performance.now() - start, frameMs, frames.length)]);
+  }, frameMs);
+}
+
+// 冲刺目标：优先朝屏幕中间跑，避免贴边后原地踏步（主进程会把窗口夹回工作区）
+// 多屏下 availLeft 才是当前屏幕在全局坐标里的左边界，直接用 availWidth 会把副屏算错
+function runTargetX(fromX) {
+  const dist = 150 + Math.random() * 120;
+  const sc = window.screen || {};
+  const left = (Number.isFinite(sc.availLeft) ? sc.availLeft : 0) + 20;
+  const right = left + (sc.availWidth || 1440) - 280;
+  let dir = Math.random() < 0.5 ? -1 : 1;
+  if (fromX + dist > right) dir = -1;
+  else if (fromX - dist < left) dir = 1;
+  return Math.round(fromX + dir * dist);
+}
+
+function startRunDash() {
+  if (currentForm !== 'custom' || mode !== 'idle' || !cur) { scheduleWander(); return; }
+  const targetX = runTargetX(cur.x);
+  pet.classList.toggle('face-left', targetX < cur.x);   // 向左跑：scaleX(-1)
+  mode = 'run';
+  setRunFrame(true);
+  runLast = performance.now();
+  stepRun({ x: targetX, y: cur.y });
+}
+
+function stepRun(target) {
+  if (mode !== 'run' || drag) { stopRun(); return; }
+  const now = performance.now();
+  const dt = (now - runLast) / 1000;
+  runLast = now;
+  const dx = target.x - cur.x;
+  if (Math.abs(dx) < 2) { stopRun(); return; }
+  cur.x += Math.sign(dx) * Math.min(RunMath.runStep(dt), Math.abs(dx));
+  if (now - lastMoveAt >= 33) {
+    lastMoveAt = now;
+    window.api.setWinPos(Math.round(cur.x), Math.round(cur.y));
+  }
+  rafId = requestAnimationFrame(() => stepRun(target));
+}
+
+function stopRun() {
+  if (mode === 'run') mode = 'idle';
+  if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+  setRunFrame(false);
+  if (!rigOn && currentForm === 'custom' && F.idle.length) crossfadeTo(F.idle[0], 320);
+  scheduleWander();
+}
+
+// 外部触发（面板「跑一段」/演示钩子）：位置就绪后立刻冲刺
+async function runOnDemand() {
+  if (currentForm !== 'custom' || mode === 'drag' || mode === 'run') return;
+  const mySession = bumpSession();
+  clearBehaviorTimers();
+  mode = 'idle';
+  pet.classList.remove('acting', ...ACT_CLASSES);
+  await ensurePos();
+  if (session !== mySession || mode !== 'idle') return;
+  startRunDash();
+}
+
 function playAction(name) {
   const act = ACTIONS[name];
   const seq = F.sequences && F.sequences[name];
@@ -502,7 +613,7 @@ function playAction(name) {
   clearBehaviorTimers();
   mode = 'act';
   if (rigOn) { disableRig(); }   // 动作使用序列帧
-  pet.classList.remove('walking', 'face-left', ...ACT_CLASSES);
+  pet.classList.remove('walking', 'running', 'run-seq', 'face-left', ...ACT_CLASSES);
   pet.classList.add('acting', 'act-' + name);
   if (seq && seq.frames && seq.frames.length > 1) {
     let tick = 0;
@@ -539,6 +650,9 @@ async function startWander() {
   const mySession = session;
   await ensurePos();
   if (session !== mySession || mode !== 'idle') return;  // 等待期间被拖拽/动作打断
+  // 偶尔跑一段：有真跑步帧时概率更高（腿部交替是看点），没有则是走路帧加速的兜底
+  const hasRunSeq = !!(F.runSeq && F.runSeq.frames && F.runSeq.frames.length >= 2);
+  if (Math.random() < (hasRunSeq ? 0.35 : 0.12)) { startRunDash(); return; }
   const target = {
     x: home.x + Math.round((Math.random() * 2 - 1) * 90),
     y: home.y + Math.round((Math.random() * 2 - 1) * 36)
@@ -583,7 +697,8 @@ function stopWander() {
 window.api.onFormChanged((form) => applyForm(form));
 window.api.onPetSay((msg) => {
   if (!msg) return;
-  if (typeof msg.action === 'string') playAction(msg.action);
+  if (msg.action === 'run') runOnDemand();                       // 奔跑是位移行为，不走定格动作
+  else if (typeof msg.action === 'string') playAction(msg.action);
   if (msg.text) say(msg.text, msg.mood || 'normal');
 });
 window.api.onCustomImageChanged(() => {

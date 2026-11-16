@@ -43,7 +43,8 @@ const { clampToArea, isInsideAnyDisplay } = require('./lib/geometry');
 const { restorePomodoro, pomoSnapshot } = require('./lib/pomodoro');
 const { buildBundledSequences, ACTION_META, WALK } = require('./lib/sequences');
 const { RIG_PARTS: RIG_PLAN, rigFilePath, coreRigPresent, optionalRigPresent } = require('./lib/rig');
-const { alphaBBox, heightScale } = require('./lib/frameNorm');
+const { alphaBBox, alphaStats, heightScale, seqCanvas, seqPlacements } = require('./lib/frameNorm');
+const { RUN_FRAMES, RUN_FRAME_MS } = require('./lib/run');
 const { analyzeFrame } = require('./lib/frameQuality');
 
 function loadState() {
@@ -149,6 +150,15 @@ function previewCache(p, img) {
   }
 }
 
+// 奔跑序列（用户生成帧）：至少 4 帧才凑得出交替的步态，缺帧按顺序跳过
+function customRunSeq() {
+  const frames = (state.customGenRunSeq || [])
+    .filter((p) => p && fs.existsSync(p))
+    .map(fileToDataUrl)
+    .filter(Boolean);
+  return frames.length >= 4 ? { frames, frameMs: RUN_FRAME_MS } : null;
+}
+
 // 返回帧集合：{ idle, idleAlt, walk, walkAlt, happy, actions:{..., sleepAlt} }
 // 内置 3D 猫返回多帧组（呼吸/迈步/睡姿成对，供丝滑循环）；用户自定义图返回单帧（成对帧退化为同一张）
 function customFrames() {
@@ -162,11 +172,11 @@ function customFrames() {
         if (p && fs.existsSync(p)) { const u = fileToDataUrl(p); if (u) actions[k] = u; }
       });
     }
-    return { idle, idleAlt: idle, walk, walkAlt: walk, happy: idle, actions, meta: ACTION_META, sequences: {}, walkSeq: null, generated: true };
+    return { idle, idleAlt: idle, walk, walkAlt: walk, happy: idle, actions, meta: ACTION_META, sequences: {}, walkSeq: null, runSeq: customRunSeq(), generated: true };
   }
   if (state.customImage && fs.existsSync(state.customImage)) {
     const u = fileToDataUrl(state.customImage);
-    return { idle: u, idleAlt: u, walk: u, walkAlt: u, happy: u, actions: {}, meta: ACTION_META, sequences: {}, walkSeq: null, generated: false };
+    return { idle: u, idleAlt: u, walk: u, walkAlt: u, happy: u, actions: {}, meta: ACTION_META, sequences: {}, walkSeq: null, runSeq: null, generated: false };
   }
   const actions = {};
   Object.keys(BUNDLED_ACTIONS).forEach((k) => {
@@ -185,7 +195,8 @@ function customFrames() {
     actions,
     meta: ACTION_META,
     sequences: seq.actions,
-    walkSeq: seq.walk
+    walkSeq: seq.walk,
+    runSeq: null            // 内置猫没有跑步真帧，渲染层用走路帧加速兜底
   };
 }
 
@@ -209,6 +220,38 @@ const GEN_ACTION_PROMPTS = {
   eat:   'Turn the subject in this photo into an adorable chibi 3D mascot, Pixar/Blender style, keep key colors and features. Pose: head lowered eating from a small round food bowl placed in front, happy eating expression. Anatomically correct cat: four legs and one tail, no extra limbs. Isolated on a FULLY TRANSPARENT background, PNG, centered, no ground, no baked shadow.',
   sleep: 'Turn the subject in this photo into an adorable chibi 3D mascot, Pixar/Blender style, keep key colors and features. Pose: lying down curled up sleeping, eyes closed peacefully, small white Zzz symbols floating above head. Anatomically correct cat: four legs and one tail, no extra limbs. Isolated on a FULLY TRANSPARENT background, PNG, centered, no ground, no baked shadow.'
 };
+
+// 奔跑序列提示词：公共前缀锁死「侧视朝右 + 身体水平 + 同一机位/比例/基线 + 透明底」，
+// 8 个姿势构成一个完整步态循环（收拢 ↔ 伸展交替；A/B 两相由不同对角腿领跑）。
+// 每帧是独立一次生成，模型看不到别的帧，所以不能写「mirror of DOWN-A」这类跨帧指代，
+// 必须把每条腿的位置直接写清楚。
+const GEN_RUN_PREFIX = 'Turn the cat in this photo into the SAME adorable chibi 3D mascot as the reference idle image (Pixar/Blender toy style, identical fur colors, markings, eye color, proportions). STRICT SIDE VIEW facing RIGHT, the body axis is perfectly HORIZONTAL (no pitch, no tilt). Same camera, same scale, same canvas size, feet on the same ground baseline in every frame. Anatomically correct: exactly four legs and one tail. Isolated on a FULLY TRANSPARENT background, PNG, no ground, no baked shadow, no motion blur, no speed lines.\nPose: ';
+const GEN_RUN_POSES = [
+  'CONTACT-A: RIGHT front paw reaches far forward and touches down, LEFT front leg trails back under the chest, LEFT hind paw pushes off far behind, RIGHT hind leg swings forward under the belly. Body stretched long and low, head forward.',
+  'DOWN-A: weight on the RIGHT front paw planted under the chest, LEFT front leg lifted just off the ground, chest lowered, spine slightly compressed, both hind legs gathering forward under the belly.',
+  'PASSING-A: body compressed and gathered in mid-air, back arched upward, all four paws bunched close together under the belly, tail low.',
+  'FLIGHT-A: fully extended in mid-air, both front legs stretched far forward, both hind legs stretched far back, all four paws off the ground, spine long and flat, tail streaming straight back.',
+  'CONTACT-B: LEFT front paw reaches far forward and touches down, RIGHT front leg trails back under the chest, RIGHT hind paw pushes off far behind, LEFT hind leg swings forward under the belly. Body stretched long and low, head forward.',
+  'DOWN-B: weight on the LEFT front paw planted under the chest, RIGHT front leg lifted just off the ground, chest lowered, spine slightly compressed, both hind legs gathering forward under the belly.',
+  'PASSING-B: body compressed and gathered in mid-air, back arched upward, all four paws bunched close together under the belly, tail curling low, head slightly lower than in the stretched frames.',
+  'FLIGHT-B: fully extended in mid-air, both front legs stretched far forward and slightly higher, both hind legs stretched far back, all four paws off the ground, spine long and flat, tail streaming straight back.'
+];
+const RUN_KEYS = GEN_RUN_POSES.map((_, i) => `run-${i + 1}`);
+// useIdleRef：跑步帧额外带上已生成的站立帧做参考，锁住同一只猫的颜色/花纹/比例
+const GEN_RUN_TASKS = GEN_RUN_POSES.map((pose, i) => ({
+  key: RUN_KEYS[i],
+  prompt: GEN_RUN_PREFIX + pose,
+  label: `奔跑 ${i + 1}/${RUN_FRAMES}`,
+  useIdleRef: true
+}));
+
+// 'run-3' → 2（序列下标）；非奔跑键返回 -1
+function runIndexOfKey(key) {
+  const m = /^run-(\d+)$/.exec(String(key || ''));
+  if (!m) return -1;
+  const i = Number(m[1]) - 1;
+  return i >= 0 && i < RUN_FRAMES ? i : -1;
+}
 
 function genConfigPath() {
   return path.join(app.getPath('userData'), 'generation.config.json');
@@ -334,13 +377,16 @@ async function genAvatarFrame(srcPath, poseName, prompt, refs) {
     const outPath = path.join(app.getPath('userData'), `pet-gen-${poseName}-${Date.now()}${valid.ext}`);
     fs.writeFileSync(outPath, buf);
     if (!poseName.startsWith('rig-')) {
-      const q = checkFrameQuality(outPath, poseName === 'idle' ? null : poseRefBox);
+      const isRun = runIndexOfKey(poseName) >= 0;
+      // 奔跑帧是水平姿态，与站立帧比高宽比必然“失衡”，不能套站立帧的比例门；
+      // 也不能逐帧按高度归一化（伸展帧越扁会被放得越大），统一在整组归一化里处理。
+      const q = checkFrameQuality(outPath, (poseName === 'idle' || isRun) ? null : poseRefBox);
       if (!q.ok) {
         try { fs.rmSync(outPath, { force: true }); } catch (e) { /* ignore */ }
         return { ok: false, error: 'quality_' + (q.reason || 'rejected') };
       }
       if (poseName === 'idle' && q.bbox) poseRefBox = { w: q.bbox.w, h: q.bbox.h };
-      normalizePoseFrame(outPath);
+      if (!isRun) normalizePoseFrame(outPath);
     }
     return { ok: true, path: outPath };
   };
@@ -420,6 +466,52 @@ function normalizePoseFrame(file, targetH = 340) {
   } catch (e) { /* 归一化失败不影响生成 */ }
 }
 
+// 奔跑序列整组归一化：所有帧共享一个缩放系数，按质心横向对齐、脚底对齐同一基线，
+// 落到同一张贴合猫实际范围的画布（画布统一才不会帧间忽大忽小/上下跳；贴合才够大）。
+const RUN_TARGET_H = 190;       // 水平姿态的身体高度，约等于站立帧 340 的同一只猫
+const RUN_CANVAS_MAX_W = 520;
+function normalizeRunSequence() {
+  const paths = (state.customGenRunSeq || []).filter((p) => p && fs.existsSync(p));
+  if (paths.length < 2) return 0;
+  const imgs = [];
+  const stats = [];
+  for (const p of paths) {
+    try {
+      const img = nativeImage.createFromPath(p);
+      if (img.isEmpty()) return 0;
+      const { width, height } = img.getSize();
+      const st = alphaStats(img.getBitmap(), width, height);
+      if (!st) return 0;
+      imgs.push(img);
+      stats.push(st);
+    } catch (e) { return 0; }
+  }
+  const canvas = seqCanvas(stats, RUN_TARGET_H, 6, RUN_CANVAS_MAX_W);
+  const plan = canvas && seqPlacements(stats, canvas.w, canvas.h, RUN_TARGET_H);
+  if (!plan) return 0;
+  let done = 0;
+  for (let i = 0; i < imgs.length; i++) {
+    const it = plan.items[i];
+    try {
+      const cropped = imgs[i].crop({ x: stats[i].x, y: stats[i].y, width: stats[i].w, height: stats[i].h });
+      const scaled = cropped.resize({ width: it.w, height: it.h, quality: 'best' });
+      const sz = scaled.getSize();
+      const sb = scaled.getBitmap();
+      const dest = Buffer.alloc(plan.canvas.w * plan.canvas.h * 4);   // 全透明画布
+      const dx = Math.max(0, Math.min(plan.canvas.w - sz.width, it.dx));
+      const dy = Math.max(0, Math.min(plan.canvas.h - sz.height, plan.baseline - sz.height));
+      const cols = Math.min(sz.width, plan.canvas.w - dx);
+      for (let y = 0; y < sz.height; y++) {
+        sb.copy(dest, ((dy + y) * plan.canvas.w + dx) * 4, y * sz.width * 4, (y * sz.width + cols) * 4);
+      }
+      const out = nativeImage.createFromBitmap(dest, { width: plan.canvas.w, height: plan.canvas.h });
+      fs.writeFileSync(paths[i], out.toPNG());
+      done++;
+    } catch (e) { /* 单帧失败不影响其余帧 */ }
+  }
+  return done;
+}
+
 // ---------- 生成任务：隔离、并发、重试、取消、可查询 ----------
 let genJob = null;
 let genSeq = 0;
@@ -431,7 +523,24 @@ const GEN_REST = [
   { key: 'groom', prompt: GEN_ACTION_PROMPTS.groom, label: '舔毛' },
   { key: 'eat',   prompt: GEN_ACTION_PROMPTS.eat,   label: '吃饭' },
   { key: 'sleep', prompt: GEN_ACTION_PROMPTS.sleep, label: '睡觉' }
-].concat(RIG_PLAN.map((p) => ({ key: p.key, prompt: GEN_RIG_PROMPTS[p.key], label: p.label, rig: true })));
+].concat(GEN_RUN_TASKS).concat(RIG_PLAN.map((p) => ({ key: p.key, prompt: GEN_RIG_PROMPTS[p.key], label: p.label, rig: true })));
+
+// 某姿势帧是否已就绪（startGenJob 与 retryMissingFrames 共用判定，避免两处漂移）
+function hasFrameFor(key) {
+  if (key.startsWith('rig-')) {
+    const rf = rigFilePath(app.getPath('userData'), key);
+    return !!(rf && fs.existsSync(rf));
+  }
+  if (key === 'idle') return !!(state.customGenIdle && fs.existsSync(state.customGenIdle));
+  if (key === 'walk') return !!(state.customGenWalk && fs.existsSync(state.customGenWalk));
+  const ri = runIndexOfKey(key);
+  if (ri >= 0) {
+    const p = (state.customGenRunSeq || [])[ri];
+    return !!(p && fs.existsSync(p));
+  }
+  const ap = state.customGenActions && state.customGenActions[key];
+  return !!(ap && fs.existsSync(ap));
+}
 
 function jobSnapshot(job) {
   if (!job) return null;
@@ -466,6 +575,12 @@ function applyFrameToState(key, filePath) {
   }
   if (key === 'idle') state.customGenIdle = filePath;
   else if (key === 'walk') state.customGenWalk = filePath;
+  else if (runIndexOfKey(key) >= 0) {
+    const seq = (Array.isArray(state.customGenRunSeq) ? state.customGenRunSeq : []).slice(0, RUN_FRAMES);
+    while (seq.length < RUN_FRAMES) seq.push(null);
+    seq[runIndexOfKey(key)] = filePath;
+    state.customGenRunSeq = seq;
+  }
   else state.customGenActions = Object.assign({}, state.customGenActions || {}, { [key]: filePath });
   saveState();
   broadcastCustomImage();
@@ -488,11 +603,13 @@ function makeEmptySnapshot(jobId, sourceId, status, total, errorCode) {
 // 启动生成任务。only 指定本次要补的姿势（重试失败项用）
 function startGenJob(sourcePath, sourceId, only, refs) {
   const want = (k) => !only || only.includes(k);
+  // 奔跑序列是一个整体：整组归一化依赖「同一次生成」的统一比例，
+  // 新旧帧混用会出现帧间忽大忽小，所以缺任何一帧就整组重做。
+  const runSeqComplete = RUN_KEYS.every((k) => hasFrameFor(k));
   const has = (k) => {
     if (k.startsWith('rig-')) return false;   // 骨骼部件随新照片重新生成
-    if (k === 'idle') return !!(state.customGenIdle && fs.existsSync(state.customGenIdle));
-    if (k === 'walk') return !!(state.customGenWalk && fs.existsSync(state.customGenWalk));
-    return !!(state.customGenActions && state.customGenActions[k] && fs.existsSync(state.customGenActions[k]));
+    if (runIndexOfKey(k) >= 0) return runSeqComplete;
+    return hasFrameFor(k);
   };
   const tasks = [];
   if (want('idle') && !has('idle')) tasks.push({ key: 'idle', prompt: GEN_IDLE_PROMPT, label: '站立', priority: true });
@@ -520,7 +637,16 @@ function startGenJob(sourcePath, sourceId, only, refs) {
     jobId,
     sourceId: sid,
     tasks,
-    genFrame: (t) => genAvatarFrame(sourcePath, t.key, t.prompt, refs || state.customImages),
+    // 跑步帧额外带上站立帧做参考（站立帧 priority 先生成），锁住同一只猫的配色与比例
+    genFrame: (t) => {
+      const base = refs || state.customImages;
+      const list = (t.useIdleRef && state.customGenIdle && fs.existsSync(state.customGenIdle))
+        ? [sourcePath, state.customGenIdle]
+        : base;
+      return genAvatarFrame(sourcePath, t.key, t.prompt, list);
+    },
+    // 截止时间随任务数放大：一次要补 8 帧跑步序列时，固定 10 分钟会把后面的帧全判成超时
+    deadlineMs: Math.max(10 * 60 * 1000, tasks.length * 70 * 1000),
     applyFrame: (key, filePath) => {
       if (genJob !== runner.job) return;   // 旧任务不得写状态
       applyFrameToState(key, filePath);
@@ -537,12 +663,20 @@ function startGenJob(sourcePath, sourceId, only, refs) {
   poseRefBox = null;
   genRunner = runner;
   genJob = runner.job;
+  // 整组重做奔跑序列前清空旧槽位：regenerate 期间先退回走路帧，也避免新旧比例混播
+  if (tasks.some((t) => runIndexOfKey(t.key) >= 0) && (state.customGenRunSeq || []).some(Boolean)) {
+    state.customGenRunSeq = [];
+    saveState();
+    broadcastCustomImage();
+  }
   persistGenJob();
   sendGenStatus(runner.snapshot());
   petSay(`正在生成 ${tasks.length} 个素材（姿势 + 骨骼部件），稍等~`, 'happy');
 
   runner.run().then((snap) => {
     if (genJob !== runner.job) return;
+    // 跑步序列整组归一化后再刷新渲染层，避免帧间忽大忽小
+    if (normalizeRunSequence() > 0) { dataUrlCache.clear(); broadcastCustomImage(); }
     if (coreRigPresent(app.getPath('userData'), (f) => fs.existsSync(f))) {
       if (petWin) petWin.webContents.send('rig-refresh');
     }
@@ -562,6 +696,7 @@ function cleanupOldGenFiles() {
     const keep = new Set(
       [state.customImage, state.customGenIdle, state.customGenWalk]
         .concat(Object.values(state.customGenActions || {}))
+        .concat(state.customGenRunSeq || [])
         .filter(Boolean)
     );
     const dir = app.getPath('userData');
@@ -1180,6 +1315,7 @@ async function processUploadFiles(files) {
     state.customGenIdle = null;
     state.customGenWalk = null;
     state.customGenActions = null;
+    state.customGenRunSeq = [];
     state.form = 'custom';
     saveState();
     refreshTrayMenu();
@@ -1307,23 +1443,18 @@ handle('test-gen-config', async () => {
   });
 });
 handle('cancel-gen', () => { cancelGenJob(); return jobSnapshot(genJob); });
-// 重试缺失帧（IPC 与启动恢复共用）：骨骼部件不在 GEN_REST 的 only 判定里，
-// 但 startGenJob(null) 会重跑全部缺失项（含 rig），此处保持与面板语义一致。
+// 重试缺失帧（IPC 与启动恢复共用）：缺帧判定统一走 hasFrameFor（姿势帧看状态、
+// 骨骼部件看文件、跑步帧看序列槽位），与面板「重试失败项」语义一致。
 function retryMissingFrames() {
   const src = state.customImage;
   if (!src || !fs.existsSync(src)) return { ok: false, error: 'no_source' };
   const only = [];
-  if (!(state.customGenIdle && fs.existsSync(state.customGenIdle))) only.push('idle');
-  if (!(state.customGenWalk && fs.existsSync(state.customGenWalk))) only.push('walk');
-  GEN_REST.forEach((t) => {
-    const p = state.customGenActions && state.customGenActions[t.key];
-    if (!(p && fs.existsSync(p))) only.push(t.key);
-    // 骨骼部件：对应文件缺失时也补
-    if (t.rig) {
-      const rf = rigFilePath(app.getPath('userData'), t.key);
-      if (!fs.existsSync(rf)) only.push(t.key);
-    }
-  });
+  if (!hasFrameFor('idle')) only.push('idle');
+  GEN_REST.forEach((t) => { if (!hasFrameFor(t.key)) only.push(t.key); });
+  // 奔跑序列缺帧就整组补齐（整组归一化要求同一次生成的统一比例）
+  if (RUN_KEYS.some((k) => only.includes(k))) {
+    RUN_KEYS.forEach((k) => { if (!only.includes(k)) only.push(k); });
+  }
   if (!only.length) return { ok: true, nothingToDo: true };
   const job = startGenJob(src, `retry-${Date.now()}`, only);
   return { ok: true, job: jobSnapshot(job) };
@@ -1530,7 +1661,7 @@ on('pet-say', (e, msg) => {
   if (text) petSay(text, mood, true);
 });
 on('trigger-action', (e, name) => {
-  const allowed = ['roll', 'groom', 'eat', 'sleep', 'drink', 'stretch'];
+  const allowed = ['roll', 'groom', 'eat', 'sleep', 'drink', 'stretch', 'run'];
   if (!allowed.includes(name)) return;
   if (petWin) petWin.webContents.send('pet-say', { action: name });
 });
@@ -1592,6 +1723,16 @@ app.whenReady().then(() => {
     const r = retryMissingFrames();
     console.log('[retry-gen]', JSON.stringify(r).slice(0, 200));
   }, 3000);
+  // 自测钩子：GEN_RUN=1 只补 8 帧奔跑序列；RUN_DEMO=1 启动即跑一段（验收腿部动作）
+  if (process.env.GEN_RUN === '1') setTimeout(() => {
+    const src = state.customImage;
+    if (!src || !fs.existsSync(src)) { console.log('[gen-run] no source photo'); return; }
+    const job = startGenJob(src, `run-${Date.now()}`, RUN_KEYS);
+    console.log('[gen-run]', JSON.stringify(job).slice(0, 200));
+  }, 2000);
+  if (process.env.RUN_DEMO === '1') setTimeout(() => {
+    if (petWin) petWin.webContents.send('pet-say', { action: 'run' });
+  }, 3500);
 
   // 光标位置广播：让桌宠的视线/身体跟随用户（10Hz，轻量）
   cursorTimer = setInterval(() => {

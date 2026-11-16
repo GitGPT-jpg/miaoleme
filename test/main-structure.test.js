@@ -133,3 +133,74 @@ test('回归：占位图检测（返回 1024 方形且与请求不符视为解�
   assert.match(block, /size\.width === 1024 && size\.height === 1024/, '检测 1024×1024 占位图');
   assert.match(block, /return null;/, '占位图按失败处理');
 });
+
+test('奔跑序列：8 帧任务进入 GEN_REST，并带站立帧参考', () => {
+  assert.equal(require('../lib/run').RUN_FRAMES, 8);
+  assert.match(SRC, /const GEN_RUN_POSES = \[/, '应有 8 个姿势提示词');
+  const poses = SRC.slice(SRC.indexOf('const GEN_RUN_POSES = ['), SRC.indexOf('const RUN_KEYS'));
+  for (const tag of ['CONTACT-A', 'DOWN-A', 'PASSING-A', 'FLIGHT-A', 'CONTACT-B', 'DOWN-B', 'PASSING-B', 'FLIGHT-B']) {
+    assert.ok(poses.includes(tag), `缺少姿势 ${tag}`);
+  }
+  assert.match(SRC, /STRICT SIDE VIEW facing RIGHT/, '公共前缀必须锁死侧视朝右');
+  assert.match(SRC, /body axis is perfectly HORIZONTAL/, '身体必须水平');
+  assert.match(SRC, /FULLY TRANSPARENT background/, '透明底');
+  assert.match(SRC, /\.concat\(GEN_RUN_TASKS\)/, 'GEN_REST 必须包含奔跑任务');
+  assert.match(SRC, /useIdleRef: true/, '奔跑帧需带站立帧做身份参考');
+});
+
+test('奔跑帧写入序列槽位，不得混进动作帧', () => {
+  const body = extractFunctionBody('applyFrameToState');
+  assert.match(body, /runIndexOfKey\(key\) >= 0/, '必须识别 run-N 键');
+  assert.match(body, /state\.customGenRunSeq = seq/, '写入 customGenRunSeq');
+  const runBranch = body.indexOf('runIndexOfKey(key) >= 0');
+  const actionBranch = body.indexOf('customGenActions = Object.assign');
+  assert.ok(runBranch < actionBranch, '奔跑分支必须在 actions 兜底分支之前');
+});
+
+test('生成帧必须下发 runSeq，且奔跑帧不走逐帧高度归一化', () => {
+  const frames = extractFunctionBody('customFrames');
+  assert.match(frames, /runSeq: customRunSeq\(\)/, '用户生成帧返回 runSeq');
+  const run = extractFunctionBody('customRunSeq');
+  assert.match(run, /frames\.length >= 4/, '少于 4 帧凑不出步态，视为无序列');
+  assert.match(run, /frameMs: RUN_FRAME_MS/);
+  const gen = extractFunctionBody('genAvatarFrame');
+  assert.match(gen, /if \(!isRun\) normalizePoseFrame\(outPath\)/, '奔跑帧不得逐帧按高度归一化');
+  assert.match(gen, /\(poseName === 'idle' \|\| isRun\) \? null : poseRefBox/, '奔跑帧不套站立帧比例门');
+  assert.match(SRC, /normalizeRunSequence\(\) > 0/, '任务结束后整组归一化并刷新');
+});
+
+test('清理不得删掉刚生成的奔跑帧', () => {
+  const body = extractFunctionBody('cleanupOldGenFiles');
+  assert.match(body, /\.concat\(state\.customGenRunSeq \|\| \[\]\)/, 'keep 集合必须含奔跑序列');
+});
+
+test('奔跑序列按整组重做：缺一帧就全部重生成', () => {
+  const start = extractFunctionBody('startGenJob');
+  assert.match(start, /const runSeqComplete = RUN_KEYS\.every/, '整组完整性判定');
+  assert.match(start, /if \(runIndexOfKey\(k\) >= 0\) return runSeqComplete/, '缺帧时所有奔跑帧都算缺');
+  assert.match(start, /state\.customGenRunSeq = \[\]/, '重做前清空旧槽位，避免新旧比例混播');
+  const retry = extractFunctionBody('retryMissingFrames');
+  assert.match(retry, /RUN_KEYS\.some\(\(k\) => only\.includes\(k\)\)/, '重试时奔跑序列整组入列');
+});
+
+test('渲染层：奔跑用硬切轮播 + dt 位移，不得 crossfade', () => {
+  const pet = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'pet.js'), 'utf-8');
+  const start = pet.indexOf('function setRunFrame(');
+  assert.ok(start >= 0, 'setRunFrame not found');
+  const block = pet.slice(start, pet.indexOf('function runTargetX('));
+  assert.match(block, /RunMath\.pickRunFrames\(F\.runSeq/, '真帧优先选帧');
+  assert.match(block, /hardCutTo\(/, '必须硬切');
+  assert.equal(/crossfadeTo\(/.test(block), false, '奔跑帧间隔太短，不得交叉淡化');
+  assert.match(block, /classList\.toggle\('run-seq', real\)/, '真帧时标记 run-seq 以关闭 CSS 缩放步态');
+  const step = pet.slice(pet.indexOf('function stepRun('), pet.indexOf('function stopRun('));
+  assert.match(step, /RunMath\.runStep\(dt\)/, '位移必须按 dt 推进（90 px/s）');
+});
+
+test('渲染层：真帧序列下 CSS 不叠加缩放步态', () => {
+  const css = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'pet.css'), 'utf-8');
+  assert.match(css, /#pet\.form-custom\.running \.pet-photo-img \{[^}]*animation: none/, '奔跑时关闭浮动/摇摆动画');
+  assert.match(css, /running\.run-seq \.pet-photo-img \{[^}]*width: 200px/, '真帧用加宽的展示框装横向画布');
+  assert.match(css, /running:not\(\.run-seq\) \.pet-photo-img \{\s*animation: runGallop/, 'runGallop 只用于无真帧的兜底');
+  assert.match(css, /#pet\.form-custom\.running \.pet-shadow \{[^}]*shadowRun/, '保留影子节奏');
+  assert.match(css, /#pet\.form-custom\.running\.face-left \.pet-photo-img \{ transform: scaleX\(-1\); \}/, '向左跑用 scaleX(-1)');
+});
