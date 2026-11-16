@@ -501,6 +501,8 @@ const GEN_REST = [
   { key: 'eat',   prompt: GEN_ACTION_PROMPTS.eat,   label: '吃饭' },
   // 喂水是核心互动，自定义形象也要有低头喝水的画面（缺这帧时喂水只有气泡没动作）
   { key: 'drink', prompt: GEN_ACTION_PROMPTS.drink, label: '喝水' },
+  // 面板「伸懒腰」按钮对所有形态都在，自定义形象缺这帧时点了没反应
+  { key: 'stretch', prompt: GEN_ACTION_PROMPTS.stretch, label: '伸懒腰' },
   { key: 'sleep', prompt: GEN_ACTION_PROMPTS.sleep, label: '睡觉' }
 ].concat(GEN_RUN_TASKS).concat(RIG_PLAN.map((p) => ({ key: p.key, prompt: GEN_RIG_PROMPTS[p.key], label: p.label, rig: true })));
 

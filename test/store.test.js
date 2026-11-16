@@ -173,7 +173,7 @@ test('奔跑序列：非数组与全空输入收敛为空数组', () => {
 test('动作帧白名单：只接受已知动作键', () => {
   const s = normalizeState({ customGenActions: { roll: '/tmp/r.png', run: '/tmp/x.png', fly: '/tmp/f.png' } });
   assert.deepEqual(s.customGenActions, { roll: '/tmp/r.png' }, '奔跑帧不走 actions，走 customGenRunSeq');
-  assert.deepEqual(ACTION_KEYS, ['roll', 'groom', 'eat', 'sleep', 'drink']);
+  assert.deepEqual(ACTION_KEYS, ['roll', 'groom', 'eat', 'sleep', 'drink', 'stretch']);
 });
 
 test('未知顶层字段原样保留（同一 userData 可能被别的分支构建读写）', () => {
