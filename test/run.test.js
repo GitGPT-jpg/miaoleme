@@ -60,3 +60,30 @@ test('真帧序列里的空洞被剔除', () => {
   assert.deepEqual(r.frames, ['a', 'b', 'c']);
   assert.equal(r.real, true);
 });
+
+test('播放顺序按体长交替：收拢 → 过渡 → 伸展 → 过渡', () => {
+  // 体长（归一化后的帧宽），乱序给入
+  const len = [300, 160, 290, 200, 310, 150, 240, 260];
+  const order = RunMath.orderRunCycle(len);
+  assert.equal(order.length, 8);
+  assert.deepEqual([...order].sort((a, b) => a - b), [0, 1, 2, 3, 4, 5, 6, 7], '必须是一个排列，不丢帧不重复');
+  const seq = order.map((i) => len[i]);
+  assert.equal(seq[0], 150, '最收拢的帧开头');
+  assert.equal(seq[2], 310, '第 3 帧是最伸展');
+  assert.equal(seq[4], 160, '第 5 帧回到次收拢');
+  assert.equal(seq[6], 300, '第 7 帧是次伸展');
+  // 收拢帧与伸展帧必须交替出现，不能两个极端挨在一起
+  assert.ok(seq[1] > seq[0] && seq[1] < seq[2], '过渡帧落在两极之间');
+  assert.ok(seq[5] > seq[4] && seq[5] < seq[6], '过渡帧落在两极之间');
+});
+
+test('播放顺序：帧数不足或非法输入不乱序', () => {
+  assert.deepEqual(RunMath.orderRunCycle([5, 1, 3]), [0, 1, 2], '少于 4 帧保持原序');
+  assert.deepEqual(RunMath.orderRunCycle([]), []);
+  assert.deepEqual(RunMath.orderRunCycle(null), []);
+  for (const n of [4, 5, 6, 7, 8]) {
+    const arr = Array.from({ length: n }, (_, i) => (i * 37) % 100);
+    const ord = RunMath.orderRunCycle(arr);
+    assert.deepEqual([...ord].sort((a, b) => a - b), arr.map((_, i) => i), `${n} 帧也必须是完整排列`);
+  }
+});

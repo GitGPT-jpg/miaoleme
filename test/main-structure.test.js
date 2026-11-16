@@ -181,6 +181,14 @@ test('奔跑序列按整组重做：缺一帧就全部重生成', () => {
   assert.match(start, /state\.customGenRunSeq = \[\]/, '重做前清空旧槽位，避免新旧比例混播');
   const retry = extractFunctionBody('retryMissingFrames');
   assert.match(retry, /RUN_KEYS\.some\(\(k\) => only\.includes\(k\)\)/, '重试时奔跑序列整组入列');
+  assert.match(retry, /const fixed = normalizeRunSequence\(\)/, '无缺帧时也重做归一化与播放顺序（不调生成服务）');
+});
+
+test('播放顺序由实测体长决定，不信提示词标号', () => {
+  const body = extractFunctionBody('normalizeRunSequence');
+  assert.match(body, /orderRunCycle\(plan\.items\.map\(\(it\) => it\.w\)\)/, '按归一化后的帧宽排序');
+  assert.match(body, /state\.customGenRunSeq = order\.map/, '把播放顺序写回槽位');
+  assert.match(SRC, /orderRunCycle/, 'main.js 必须引入 orderRunCycle');
 });
 
 test('渲染层：奔跑用硬切轮播 + dt 位移，不得 crossfade', () => {

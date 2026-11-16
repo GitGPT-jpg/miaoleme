@@ -44,7 +44,7 @@ const { restorePomodoro, pomoSnapshot } = require('./lib/pomodoro');
 const { buildBundledSequences, ACTION_META, WALK } = require('./lib/sequences');
 const { RIG_PARTS: RIG_PLAN, rigFilePath, coreRigPresent, optionalRigPresent } = require('./lib/rig');
 const { alphaBBox, alphaStats, heightScale, seqCanvas, seqPlacements } = require('./lib/frameNorm');
-const { RUN_FRAMES, RUN_FRAME_MS } = require('./lib/run');
+const { RUN_FRAMES, RUN_FRAME_MS, orderRunCycle } = require('./lib/run');
 const { analyzeFrame } = require('./lib/frameQuality');
 
 function loadState() {
@@ -225,16 +225,16 @@ const GEN_ACTION_PROMPTS = {
 // 8 个姿势构成一个完整步态循环（收拢 ↔ 伸展交替；A/B 两相由不同对角腿领跑）。
 // 每帧是独立一次生成，模型看不到别的帧，所以不能写「mirror of DOWN-A」这类跨帧指代，
 // 必须把每条腿的位置直接写清楚。
-const GEN_RUN_PREFIX = 'Turn the cat in this photo into the SAME adorable chibi 3D mascot as the reference idle image (Pixar/Blender toy style, identical fur colors, markings, eye color, proportions). STRICT SIDE VIEW facing RIGHT, the body axis is perfectly HORIZONTAL (no pitch, no tilt). Same camera, same scale, same canvas size, feet on the same ground baseline in every frame. Anatomically correct: exactly four legs and one tail. Isolated on a FULLY TRANSPARENT background, PNG, no ground, no baked shadow, no motion blur, no speed lines.\nPose: ';
+const GEN_RUN_PREFIX = 'Turn the cat in this photo into the SAME adorable chibi 3D mascot as the reference idle image (Pixar/Blender toy style, identical fur colors, markings, eye color, proportions). STRICT SIDE VIEW facing RIGHT, the body axis is perfectly HORIZONTAL (no pitch, no tilt). Same camera, same scale, same canvas size, feet on the same ground baseline and head at roughly the same height above that baseline in every frame. Anatomically correct: exactly four legs and one tail. Isolated on a FULLY TRANSPARENT background, PNG, no ground, no baked shadow, no motion blur, no speed lines.\nPose: ';
 const GEN_RUN_POSES = [
-  'CONTACT-A: RIGHT front paw reaches far forward and touches down, LEFT front leg trails back under the chest, LEFT hind paw pushes off far behind, RIGHT hind leg swings forward under the belly. Body stretched long and low, head forward.',
-  'DOWN-A: weight on the RIGHT front paw planted under the chest, LEFT front leg lifted just off the ground, chest lowered, spine slightly compressed, both hind legs gathering forward under the belly.',
-  'PASSING-A: body compressed and gathered in mid-air, back arched upward, all four paws bunched close together under the belly, tail low.',
-  'FLIGHT-A: fully extended in mid-air, both front legs stretched far forward, both hind legs stretched far back, all four paws off the ground, spine long and flat, tail streaming straight back.',
-  'CONTACT-B: LEFT front paw reaches far forward and touches down, RIGHT front leg trails back under the chest, RIGHT hind paw pushes off far behind, LEFT hind leg swings forward under the belly. Body stretched long and low, head forward.',
-  'DOWN-B: weight on the LEFT front paw planted under the chest, RIGHT front leg lifted just off the ground, chest lowered, spine slightly compressed, both hind legs gathering forward under the belly.',
-  'PASSING-B: body compressed and gathered in mid-air, back arched upward, all four paws bunched close together under the belly, tail curling low, head slightly lower than in the stretched frames.',
-  'FLIGHT-B: fully extended in mid-air, both front legs stretched far forward and slightly higher, both hind legs stretched far back, all four paws off the ground, spine long and flat, tail streaming straight back.'
+  'CONTACT-A: the RIGHT front paw is planted on the ground reaching forward, the LEFT front leg trails back under the chest, the LEFT hind paw is still pushing off behind, the RIGHT hind leg swings forward under the belly. Chest low, body only MODERATELY extended (body length about 1.6x shoulder height), head forward and level.',
+  'DOWN-A: weight sits over the planted RIGHT front paw, the LEFT front leg is lifted just off the ground, shoulders compressed, chest lowered, both hind legs gathering forward under the belly, body SHORT (body length about 1.3x shoulder height).',
+  'PASSING-A: the most COMPACT frame of the cycle — all four paws bunched close together under the belly, back arched upward like a bow, body VERY SHORT (body length about 1.1x shoulder height), tail low.',
+  'FLIGHT-A: the LONGEST frame of the cycle — both front legs stretched far forward, both hind legs stretched far back, all four paws off the ground, spine long and flat, tail streaming straight back.',
+  'CONTACT-B: the LEFT front paw is planted on the ground reaching forward, the RIGHT front leg trails back under the chest, the RIGHT hind paw is still pushing off behind, the LEFT hind leg swings forward under the belly. Chest low, body only MODERATELY extended (body length about 1.6x shoulder height), head forward and level.',
+  'DOWN-B: weight sits over the planted LEFT front paw, the RIGHT front leg is lifted just off the ground, shoulders compressed, chest lowered, both hind legs gathering forward under the belly, body SHORT (body length about 1.3x shoulder height).',
+  'PASSING-B: the most COMPACT frame of the cycle — all four paws bunched close together under the belly, back arched upward like a bow, body VERY SHORT (body length about 1.1x shoulder height), tail curling low.',
+  'FLIGHT-B: the LONGEST frame of the cycle — both front legs stretched far forward and slightly higher, both hind legs stretched far back, all four paws off the ground, spine long and flat, tail streaming straight back.'
 ];
 const RUN_KEYS = GEN_RUN_POSES.map((_, i) => `run-${i + 1}`);
 // useIdleRef：跑步帧额外带上已生成的站立帧做参考，锁住同一只猫的颜色/花纹/比例
@@ -508,6 +508,14 @@ function normalizeRunSequence() {
       fs.writeFileSync(paths[i], out.toPNG());
       done++;
     } catch (e) { /* 单帧失败不影响其余帧 */ }
+  }
+  // 重排播放顺序：按归一化后的实测体长排成「收拢↔伸展」交替，不依赖提示词标号
+  if (done === paths.length) {
+    const order = orderRunCycle(plan.items.map((it) => it.w));
+    if (order.length === paths.length) {
+      state.customGenRunSeq = order.map((i) => paths[i]);
+      saveState();
+    }
   }
   return done;
 }
@@ -1455,7 +1463,12 @@ function retryMissingFrames() {
   if (RUN_KEYS.some((k) => only.includes(k))) {
     RUN_KEYS.forEach((k) => { if (!only.includes(k)) only.push(k); });
   }
-  if (!only.length) return { ok: true, nothingToDo: true };
+  if (!only.length) {
+    // 没有缺帧时顺手把奔跑序列重做一遍归一化与播放顺序（纯本地计算，不调用生成服务）
+    const fixed = normalizeRunSequence();
+    if (fixed > 0) { dataUrlCache.clear(); broadcastCustomImage(); }
+    return { ok: true, nothingToDo: true, renormalized: fixed };
+  }
   const job = startGenJob(src, `retry-${Date.now()}`, only);
   return { ok: true, job: jobSnapshot(job) };
 }
