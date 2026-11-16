@@ -213,8 +213,11 @@ test('奔跑序列按整组重做：缺一帧就全部重生成', () => {
 
 test('播放顺序由实测体长决定，不信提示词标号', () => {
   const body = extractFunctionBody('normalizeRunSequence');
-  assert.match(body, /orderRunCycle\(plan\.items\.map\(\(it\) => it\.w\)\)/, '按归一化后的帧宽排序');
+  assert.match(body, /const lens = plan\.items\.map\(\(it\) => it\.w\)/, '按归一化后的帧宽量体长');
+  assert.match(body, /orderRunCycle\(lens\)/, '体长决定播放顺序');
   assert.match(body, /state\.customGenRunSeq = order\.map/, '把播放顺序写回槽位');
+  assert.match(body, /order\.some\(\(idx, k\) => lens\[idx\] !== lens\[k\]\)/, '节奏没变就不重写（等长帧互换无意义）');
+  assert.match(body, /const placed = plan\.items\.every/, '已是目标摆放就不重编码');
   assert.match(SRC, /orderRunCycle/, 'main.js 必须引入 orderRunCycle');
 });
 

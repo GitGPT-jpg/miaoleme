@@ -425,6 +425,11 @@ function normalizePoseFrame(file, targetH = 340) {
     const bmp = img.getBitmap();
     const box = alphaBBox(bmp, width, height);
     if (!box) return;
+    // 已经是「贴边裁好 + 目标高度」的帧：直接跳过，避免每次重试都重新编码一遍。
+    // 容 2px：缩放后边缘抗锯齿会留下 alpha≤阈值 的一列，严格比较会导致每次都裁掉 1px（慢性腐蚀）
+    const tight = box.x <= 2 && box.y <= 2
+      && (width - (box.x + box.w)) <= 2 && (height - (box.y + box.h)) <= 2;
+    if (tight && Math.abs(height - targetH) <= 2) return;
     const scale = heightScale(box.h, targetH);
     const cropped = img.crop({ x: box.x, y: box.y, width: box.w, height: box.h });
     const outH = Math.max(1, Math.round(box.h * scale));
@@ -458,8 +463,15 @@ function normalizeRunSequence() {
   const canvas = seqCanvas(stats, RUN_TARGET_H, 6, RUN_CANVAS_MAX_W);
   const plan = canvas && seqPlacements(stats, canvas.w, canvas.h, RUN_TARGET_H);
   if (!plan) return 0;
+  // 已经是目标摆放（画布与落位都对得上）就不再重编码一遍
+  const placed = plan.items.every((it, i) => {
+    const sz = imgs[i].getSize();
+    return sz.width === plan.canvas.w && sz.height === plan.canvas.h
+      && Math.abs(stats[i].w - it.w) <= 1 && Math.abs(stats[i].h - it.h) <= 1
+      && Math.abs(stats[i].x - it.dx) <= 1 && Math.abs(stats[i].y - it.dy) <= 1;
+  });
   let done = 0;
-  for (let i = 0; i < imgs.length; i++) {
+  if (!placed) for (let i = 0; i < imgs.length; i++) {
     const it = plan.items[i];
     try {
       const cropped = imgs[i].crop({ x: stats[i].x, y: stats[i].y, width: stats[i].w, height: stats[i].h });
@@ -479,11 +491,15 @@ function normalizeRunSequence() {
     } catch (e) { /* 单帧失败不影响其余帧 */ }
   }
   // 重排播放顺序：按归一化后的实测体长排成「收拢↔伸展」交替，不依赖提示词标号
-  if (done === paths.length) {
-    const order = orderRunCycle(plan.items.map((it) => it.w));
-    if (order.length === paths.length) {
+  if (placed || done === paths.length) {
+    const lens = plan.items.map((it) => it.w);
+    const order = orderRunCycle(lens);
+    // 只在「节奏」真变了时才写：体长相同的帧互换位置没有意义，否则每次重试都要重写一遍顺序
+    const changed = order.length === paths.length && order.some((idx, k) => lens[idx] !== lens[k]);
+    if (changed) {
       state.customGenRunSeq = order.map((i) => paths[i]);
       saveState();
+      done++;
     }
   }
   return done;
