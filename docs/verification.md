@@ -90,6 +90,25 @@
 | 30–60 分钟稳定性观察 | 安装版（含单实例/番茄恢复/生成修复）连续 30 分钟，每 3 分钟采样 | **PASS**（0–0.7% CPU，RSS 128.6MB → 60.6MB，无持续增长；见第四节） |
 | 自动游走 IPC 优化前后 CPU | 5s 间隔采样主进程 CPU/RSS | PASS（见下） |
 
+### 2026-11-16 奔跑序列（8 帧真跑步）专项验收
+
+| 项 | 实际验证方式 | 结果 |
+| --- | --- | --- |
+| 真帧生成（8 帧侧视跑步） | `GEN_RUN=1` 走真实生成链路（用户照片 + 已生成站立帧作参考） | **PASS**（8/8 成功，job status=completed） |
+| 整组归一化 | 生成后读 PNG 尺寸：8 帧同为 341×202；共享缩放 + 质心对齐 + 脚底同基线 | **PASS**（帧间不忽大忽小，身体水平，透明底） |
+| 播放顺序 | 渲染层 canvas 量 alpha 包围盒宽度：`[253,287,316,303,280,307,311,311]` | **PASS**（最收拢→过渡→最伸展→过渡 两轮交替） |
+| 渲染层轮播 | CDP `Runtime.evaluate` 读运行时：frames=8、frameMs=81、idx 逐帧硬切、imgW=200px、animationName=none、class 含 `running run-seq` | **PASS** |
+| 兜底路径（无真帧） | 同上探针，raw-photo 状态：frames=0、animationName=runGallop、frameMs=120 | **PASS**（走路帧加速 + CSS 起伏） |
+| 位移速度 | 探针读 `RunMath.runStep(1/120, WALK_SPEED)=0.80`、`(1/60)=1.60` | **PASS**（dt 推进，高刷屏不再两倍速） |
+| 冲刺落点夹紧 | 探针：`runTargetX(屏幕最右)=1197 ≤ 上限 1232`；`runTargetX(屏外左)=20`（左界） | **PASS**（不会贴边原地踏步） |
+| 隐藏时收尾 | 伪装 `document.hidden=true` 后派发 `visibilitychange`：mode run→idle，`running/run-seq` 类移除，runTimer 清空 | **PASS** |
+| 跑完自动收尾 | 可见状态等待冲刺结束 | **PASS**（mode 回 idle） |
+| 无缺帧时重做归一化 | `RETRY_GEN=1`（全部帧齐备）→ `{ok:true,nothingToDo:true,renormalized:8}`，帧尺寸保持 341×202 未被放大 | **PASS**（纯本地计算，不调用生成服务） |
+| 未知 store 字段保留 | 跑一轮生成+保存后检查外来顶层字段仍在 | **PASS**（最多 24 个、单字段 ≤64KB） |
+| 单元测试 | `npm test` | **PASS**（135 项） |
+| 姿势标号服从度 | 逐帧肉眼检查 3 批生成结果 | **已知限制**：生成模型对 CONTACT/DOWN/PASSING/FLIGHT 的服从度不稳（每批约 2–3 帧姿势跑偏、左右腿相位不总是互换）。代码侧已用「按实测体长重排播放顺序」消化这类偏差；不满意可点「重试失败项」整组重摇 |
+| 骨骼模式奔跑步频 | 代码路径复核（`mode==='run'` 进迈步分支，gait×1.8） | PASS（代码级；rig 模式真机手测 NOT_RUN） |
+
 ## 三、事故与修复记录
 
 **2026-10-21 番茄钟报时崩溃（用户反馈）**
