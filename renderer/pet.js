@@ -88,20 +88,28 @@ let visLayer = 'a';
 let activeUrl = null;
 let fading = false;
 let fadeTarget = null;
+// 淡化代数：每次开始淡化或硬切都自增，未完成的淡化回调据此作废。
+// 没有它的话，「停跑（开始淡化回站立）→ 立刻又起跑」会让那次旧淡化的定时器
+// 在几百毫秒后仍翻转图层，并把 fadeTarget（跑步帧）当成新目标再拉一次 320ms 淡化
+// —— 跑动中画面被糊一层，甚至短暂退回站立帧。
+let fadeGen = 0;
 
 function runFade(ms = 450) {
   const url = fadeTarget;
   if (!url) { fading = false; return; }
   if (url === activeUrl) { fading = false; return; }
   fading = true;
+  const gen = ++fadeGen;
   const target = visLayer === 'a' ? photoB : photoA;
   const other = visLayer === 'a' ? photoA : photoB;
   const apply = () => {
+    if (gen !== fadeGen) return;        // 期间被硬切/新淡化取代
     target.style.transition = `opacity ${ms}ms ease`;
     other.style.transition = `opacity ${ms}ms ease`;
     target.style.opacity = '1';
     other.style.opacity = '0';
     setTimeout(() => {
+      if (gen !== fadeGen) return;      // 淡化途中被硬切：图层归属不再由这次淡化决定
       visLayer = visLayer === 'a' ? 'b' : 'a';
       activeUrl = url;
       fading = false;
@@ -129,6 +137,9 @@ function crossfadeTo(url, ms = 450) {
 // 硬切：奔跑帧间隔只有 70–90ms，交叉淡化会糊成一团，直接换可见层的图
 function hardCutTo(url) {
   if (!url) return;
+  fadeGen++;                       // 作废所有未完成的淡化（否则它们几百毫秒后会把画面拉回旧目标）
+  photoA.onload = null; photoA.onerror = null;
+  photoB.onload = null; photoB.onerror = null;
   const vis = visLayer === 'a' ? photoA : photoB;
   const other = visLayer === 'a' ? photoB : photoA;
   vis.style.transition = 'none';

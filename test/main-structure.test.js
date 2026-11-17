@@ -237,6 +237,16 @@ test('渲染层：奔跑用硬切轮播 + dt 位移，不得 crossfade', () => {
   assert.match(step, /RunMath\.runStep\(dt\)/, '位移必须按 dt 推进（90 px/s）');
 });
 
+test('渲染层：硬切必须作废未完成的淡化（停跑后立刻起跑会被旧淡化拉回去）', () => {
+  const pet = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'pet.js'), 'utf-8');
+  const fade = pet.slice(pet.indexOf('function runFade('), pet.indexOf('function crossfadeTo('));
+  assert.match(fade, /const gen = \+\+fadeGen/, '淡化开始时记下代数');
+  assert.equal((fade.match(/if \(gen !== fadeGen\) return;/g) || []).length, 2, 'apply 与定时器回调都要校验代数');
+  const cut = pet.slice(pet.indexOf('function hardCutTo('), pet.indexOf('function preloadRunFrames('));
+  assert.match(cut, /fadeGen\+\+/, '硬切自增代数，作废在途淡化');
+  assert.match(cut, /photoA\.onload = null/, '同时清掉在途淡化的 onload 回调');
+});
+
 test('喂水有画面：自定义形象也生成喝水帧', () => {
   const P = require('../lib/prompts');
   assert.match(SRC, /key: 'drink', prompt: GEN_ACTION_PROMPTS\.drink, label: '喝水'/, 'GEN_REST 必须包含喝水帧');
