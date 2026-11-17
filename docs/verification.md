@@ -105,9 +105,16 @@
 | 跑完自动收尾 | 可见状态等待冲刺结束 | **PASS**（mode 回 idle） |
 | 无缺帧时重做归一化 | `RETRY_GEN=1`（全部帧齐备）→ `{ok:true,nothingToDo:true,renormalized:8}`，帧尺寸保持 341×202 未被放大 | **PASS**（纯本地计算，不调用生成服务） |
 | 未知 store 字段保留 | 跑一轮生成+保存后检查外来顶层字段仍在 | **PASS**（最多 24 个、单字段 ≤64KB） |
-| 单元测试 | `npm test` | **PASS**（135 项） |
+| 单元测试 | `npm test` | **PASS**（140 项） |
 | 姿势标号服从度 | 逐帧肉眼检查 3 批生成结果 | **已知限制**：生成模型对 CONTACT/DOWN/PASSING/FLIGHT 的服从度不稳（每批约 2–3 帧姿势跑偏、左右腿相位不总是互换）。代码侧已用「按实测体长重排播放顺序」消化这类偏差；不满意可点「重试失败项」整组重摇 |
 | 骨骼模式奔跑步频 | 代码路径复核（`mode==='run'` 进迈步分支，gait×1.8） | PASS（代码级；rig 模式真机手测 NOT_RUN） |
+| 内置猫跑步序列 | `assets/cat-3d-run-1..8.png` 以内置站立帧为源走真实链路生成；`RUN_FILES` 顺序即播放顺序 | **PASS**（8 帧同为 372×242，合计 688KB；实测体长 263/300/336/308/289/326/330/329，最收拢在第 1 帧、最伸展在第 3 帧） |
+| 内置猫奔跑渲染 | 无自定义图的 profile，CDP 探针：`runFrames=8`、`frameMs=81`、`frameMs` 硬切、展示框 200px、`object-fit: contain`、无边框无圆角 | **PASS**（同时修掉内置 3D 素材被当成用户原图、套 raw-photo 白边卡片 + `cover` 裁切的问题） |
+| 停跑→立刻起跑的淡化竞态 | CDP 走 `hardCut→crossfade→hardCut`（关掉游走排除干扰） | **修前 FAIL**：1200ms 时 `fading=true`、可见层已不是跑步帧，1800ms 图层再翻一次；**修后 PASS**：2.4s 内 `fading` 恒为 false、图层不翻转、可见层始终是跑步帧 |
+| 帧体积优化 | 站立 601×632/555KB → 323×340/171KB；16 个文件 4.61MB → 2.28MB；渲染层 dataURL 6.3MB → 3.03MB；屏上尺寸 120.1×126.3 不变 | **PASS**（`heightScale` 下限 0.5 曾把归一化废掉） |
+| 维护路径幂等 | 同一份素材连跑两次 `RETRY_GEN=1` | **PASS**（`{renormalized:8, reshrunk:8}` → `{0, 0}`） |
+| 并行工作副本互不抹状态 | 两个工作副本各自跑一轮，检查对方字段 | **PASS**（`customGenRunSeq` / 动作帧 / `health` / `hunt` 双向都保留） |
+| 无真帧兜底（未配置生成服务） | 探针，raw-photo 状态：`frames=0`、`animationName=runGallop`、`frameMs=120` | **PASS**（走路帧加速 + CSS 起伏） |
 
 ## 三、事故与修复记录
 
