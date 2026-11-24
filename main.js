@@ -1742,7 +1742,7 @@ handle('demo-start', () => { startDemoSequence(); return { ok: true }; });
 // ---------- 写代码氛围模式：全局输入活动 ----------
 // 隐私：只向桌宠转发 { kind, t }（key/click/mouse），绝不读取或传递键值内容。
 // 来源优先级：可选依赖 uiohook-napi（全平台，需辅助功能权限）→ macOS ioreg 空闲时间轮询 → 仅鼠标 + 控制台内按键。
-const vibe = { hook: null, pollTimer: null, polling: false, demoTimer: null, lastCursor: null, cursorMovedAt: 0, lastMouseSent: 0 };
+const vibe = { hook: null, keyProc: null, pollTimer: null, polling: false, demoTimer: null, lastCursor: null, cursorMovedAt: 0, lastMouseSent: 0 };
 const VIBE_POLL_MS = 250;
 
 function sendVibe(kind) {
@@ -1788,16 +1788,65 @@ function pollHidIdle() {
   });
 }
 
+// macOS 实时按键计数：CGEventSourceCounterForEventType 只返回 keyDown 的累计次数（不含键值），
+// 每 50ms 输出一次增量，桌宠就能做到“敲一下飘一个符号”。子进程异常退出时回退到 ioreg 轮询。
+const VIBE_KEY_SCRIPT = [
+  "ObjC.import('CoreGraphics'); ObjC.import('Foundation');",
+  'var out = $.NSFileHandle.fileHandleWithStandardOutput;',
+  'var last = $.CGEventSourceCounterForEventType(1, 10);',
+  'while (true) {',
+  '  delay(0.05);',
+  '  var c = $.CGEventSourceCounterForEventType(1, 10);',
+  "  if (c !== last) out.writeData($('k' + (c - last) + '\\n').dataUsingEncoding($.NSUTF8StringEncoding));",
+  '  last = c;',
+  '}'
+].join('\n');
+
+function startVibeKeyCounter() {
+  let child;
+  try {
+    child = spawn('osascript', ['-l', 'JavaScript', '-e', VIBE_KEY_SCRIPT], { stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch (e) { return false; }
+  vibe.keyProc = child;
+  let buf = '';
+  child.stdout.on('data', (d) => {
+    buf += d;
+    const lines = buf.split('\n');
+    buf = lines.pop();
+    for (const line of lines) {
+      const m = /^k(\d+)/.exec(line.trim());
+      if (!m) continue;
+      const n = Math.min(10, Number(m[1]));
+      for (let i = 0; i < n; i++) sendVibe('key');
+    }
+  });
+  const fallback = () => {
+    if (vibe.keyProc !== child) return;
+    vibe.keyProc = null;
+    if (state.vibe && !vibe.hook && !vibe.pollTimer) vibe.pollTimer = setInterval(pollHidIdle, VIBE_POLL_MS);
+  };
+  child.on('error', fallback);
+  child.on('exit', fallback);
+  return true;
+}
+
 function startVibeSources() {
-  if (vibe.hook || vibe.pollTimer) return;
+  if (vibe.hook || vibe.pollTimer || vibe.keyProc) return;
   if (startVibeHook()) return;
-  if (process.platform === 'darwin') vibe.pollTimer = setInterval(pollHidIdle, VIBE_POLL_MS);
+  if (process.platform !== 'darwin') return;
+  if (startVibeKeyCounter()) return;
+  vibe.pollTimer = setInterval(pollHidIdle, VIBE_POLL_MS);
 }
 
 function stopVibeSources() {
   if (vibe.hook) {
     try { vibe.hook.removeAllListeners(); vibe.hook.stop(); } catch (e) { /* ignore */ }
     vibe.hook = null;
+  }
+  if (vibe.keyProc) {
+    const p = vibe.keyProc;
+    vibe.keyProc = null;
+    try { p.kill(); } catch (e) { /* ignore */ }
   }
   if (vibe.pollTimer) { clearInterval(vibe.pollTimer); vibe.pollTimer = null; }
 }
@@ -1813,13 +1862,20 @@ function trackVibeCursor(c) {
   if (!vibe.hook && now - vibe.lastMouseSent >= 200) { vibe.lastMouseSent = now; sendVibe('mouse'); }
 }
 
-// 自测钩子：VIBE_DEMO=1 打开氛围模式并模拟一阵阵敲代码
+// 自测钩子：VIBE_DEMO=1 打开氛围模式，模拟“敲 3–6 秒、停 9–14 秒”的真实节奏，
+// 能同时看到打字时睡在键盘边、停下后自己玩。
 function startVibeDemo() {
   if (!state.vibe) setVibe(true);
-  let burst = 0;
+  let typingUntil = Date.now() + 4000;
+  let pauseUntil = 0;
   vibe.demoTimer = setInterval(() => {
-    burst = (burst + 1) % 60;
-    if (burst < 40) sendVibe(Math.random() < 0.08 ? 'click' : 'key');
+    const now = Date.now();
+    if (now < typingUntil) {
+      if (Math.random() < 0.8) sendVibe(Math.random() < 0.05 ? 'click' : 'key');
+      return;
+    }
+    if (!pauseUntil) { pauseUntil = now + 9000 + Math.random() * 5000; return; }
+    if (now >= pauseUntil) { typingUntil = now + 3000 + Math.random() * 3000; pauseUntil = 0; }
   }, 90);
 }
 

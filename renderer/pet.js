@@ -29,6 +29,27 @@ const ACTIONS = {
 };
 const ACT_CLASSES = ['act-roll', 'act-groom', 'act-eat', 'act-sleep', 'act-drink', 'act-stretch'];
 
+// 没有专门画帧的小动作：复用站立/动作帧，靠 CSS 动画 + 小道具把动作演出来
+const BEHAVIOR_FX = {
+  look:      { label: '咦？那边有什么…', ms: 3200, frame: 'idle' },
+  loaf:      { label: '揣手手，当一只吐司 🍞', ms: 6500, frame: 'idle2' },
+  yawn:      { label: '哈——欠~', ms: 2600, frame: 'idle2' },
+  stretch:   { label: '伸个懒腰~', ms: 3000, frame: 'idle' },
+  knead:     { label: '踩踩奶，踩踩奶~', ms: 4200, frame: 'idle' },
+  scratch:   { label: '挠挠痒~', ms: 3000, frame: 'groom' },
+  tail:      { label: '我的尾巴！别跑！', ms: 3600, frame: 'idle', prop: '〰️' },
+  pounce:    { label: '准备…扑！', ms: 2600, frame: 'idle', prop: '🐭' },
+  yarn:      { label: '毛线球是我的！', ms: 4200, frame: 'roll', prop: '🧶' },
+  butterfly: { label: '蝴蝶蝴蝶别跑~', ms: 4200, frame: 'idle', prop: '🦋' },
+  catnap:    { label: '眯一会儿…', ms: 7000, frame: 'sleep', prop: '💤' },
+  groom:     { label: '舔舔毛，保持美丽~', ms: 3600, frame: 'idle2' },
+  roll:      { label: '打个滚~', ms: 3200, frame: 'idle' },
+  eat:       { label: '吧唧吧唧 🐟', ms: 3600, frame: 'idle2', prop: '🐟' },
+  drink:     { label: '咕噜咕噜~', ms: 3000, frame: 'idle2', prop: '💧' }
+};
+const BEH_CLASSES = Object.keys(BEHAVIOR_FX).map((n) => 'beh-' + n);
+const NAP_CLASSES = ['vibe-sleeping', 'nap-twitch'];
+
 // ---------- 行为状态（单一所有权：drag > act > run > walk > idle） ----------
 // mode 是唯一的移动/动作控制权；session 用于让过期的异步回调失效
 let currentForm = 'custom';
@@ -63,7 +84,8 @@ function clearBehaviorTimers() {
 function setIdle() {
   clearBehaviorTimers();
   mode = 'idle';
-  pet.classList.remove('walking', 'running', 'run-seq', 'acting', ...ACT_CLASSES);
+  pet.classList.remove('walking', 'running', 'run-seq', 'acting', ...ACT_CLASSES, ...BEH_CLASSES, ...NAP_CLASSES);
+  clearProp();
 }
 
 function applyForm(form) {
@@ -441,7 +463,10 @@ function beginDrag(e) {
   drag = { ready: false, moved: false, mx: e.screenX, my: e.screenY, wx: 0, wy: 0 };
   mode = 'drag';
   clearBehaviorTimers();
-  pet.classList.remove('walking', 'running', 'run-seq');
+  zoomiesLeft = 0;
+  pet.classList.remove('walking', 'running', 'run-seq', 'acting', ...ACT_CLASSES, ...BEH_CLASSES, ...NAP_CLASSES);
+  vibeEl.classList.remove('vibe-sleeping');
+  clearProp();
   pet.classList.add('dragging');
   window.api.getWinPos().then((p) => {
     // 过期初始化：拖拽已结束或形态已切换 → 丢弃
@@ -619,6 +644,14 @@ function stopRun() {
   } else {
     setRunFrame(false);
   }
+  // 疯跑（zoomies）：猫会突然来回连冲好几趟
+  if (zoomiesLeft > 0 && !(vibeOn && vibePhaseState === 'typing')) {
+    zoomiesLeft -= 1;
+    clearTimeout(wanderTimer);
+    wanderTimer = setTimeout(() => { if (mode === 'idle') startRunDash(); else scheduleWander(); }, 380);
+    return;
+  }
+  zoomiesLeft = 0;
   scheduleWander();
 }
 
@@ -628,7 +661,9 @@ async function runOnDemand() {
   const mySession = bumpSession();
   clearBehaviorTimers();
   mode = 'idle';
-  pet.classList.remove('acting', ...ACT_CLASSES);
+  pet.classList.remove('acting', ...ACT_CLASSES, ...BEH_CLASSES, ...NAP_CLASSES);
+  vibeEl.classList.remove('vibe-sleeping');
+  clearProp();
   await ensurePos();
   if (session !== mySession || mode !== 'idle') return;
   startRunDash();
@@ -643,7 +678,9 @@ function playAction(name) {
   clearBehaviorTimers();
   mode = 'act';
   if (rigOn) { disableRig(); }   // 动作使用序列帧
-  pet.classList.remove('walking', 'running', 'run-seq', 'face-left', ...ACT_CLASSES);
+  pet.classList.remove('walking', 'running', 'run-seq', 'face-left', ...ACT_CLASSES, ...BEH_CLASSES, ...NAP_CLASSES);
+  vibeEl.classList.remove('vibe-sleeping');
+  clearProp();
   pet.classList.add('acting', 'act-' + name);
   if (seq && seq.frames && seq.frames.length > 1) {
     let tick = 0;
@@ -667,22 +704,28 @@ function playAction(name) {
 
 function scheduleWander() {
   clearTimeout(wanderTimer);
-  wanderTimer = setTimeout(startWander, 3500 + Math.random() * 5000);
+  // 写代码模式下你停手时，它更快地去过自己的小日子
+  const free = vibeOn && vibePhaseState === 'free';
+  wanderTimer = setTimeout(startWander, free ? 1200 + Math.random() * 2300 : 3500 + Math.random() * 5000);
 }
 
 async function startWander() {
-  if (currentForm !== 'custom' || mode !== 'idle' || vibeOn) { scheduleWander(); return; }
-  const names = displayMode === 'photo' ? [] : Object.keys(ACTIONS).filter((n) => (F.sequences && F.sequences[n]) || (F.actions && F.actions[n]));
-  if (names.length && Math.random() < 0.5) {
-    playAction(names[Math.floor(Math.random() * names.length)]);
-    return;
+  if (currentForm !== 'custom' || mode !== 'idle' || (vibeOn && vibePhaseState === 'typing')) { scheduleWander(); return; }
+  const b = BehaviorMath.pickBehavior(BehaviorMath.BEHAVIORS, behaviorRecent);
+  behaviorRecent = BehaviorMath.pushRecent(behaviorRecent, b);
+  if (b !== 'walk' && b !== 'run' && b !== 'zoomies') {
+    if (hasActionFrame(b)) { playAction(b); return; }
+    if (BEHAVIOR_FX[b]) { playBehavior(b); return; }
   }
   const mySession = session;
   await ensurePos();
   if (session !== mySession || mode !== 'idle') return;  // 等待期间被拖拽/动作打断
-  // 偶尔跑一段：有真跑步帧时概率更高（腿部交替是看点），没有则是走路帧加速的兜底
-  const hasRunSeq = !!(F.runSeq && F.runSeq.frames && F.runSeq.frames.length >= 2);
-  if (Math.random() < (hasRunSeq ? 0.35 : 0.12)) { startRunDash(); return; }
+  if (b === 'run' || b === 'zoomies') {
+    zoomiesLeft = b === 'zoomies' ? 2 : 0;
+    if (b === 'zoomies' && !quiet && Math.random() < 0.6) say('突然想跑！冲冲冲！', 'happy');
+    startRunDash();
+    return;
+  }
   const target = {
     x: home.x + Math.round((Math.random() * 2 - 1) * 90),
     y: home.y + Math.round((Math.random() * 2 - 1) * 36)
@@ -727,6 +770,97 @@ function stopWander() {
   scheduleWander();
 }
 
+// ---------- 自己的小生活：没画帧的动作用现有帧 + CSS 动画 + 道具演出来 ----------
+const petProp = document.querySelector('.pet-prop');
+let behaviorRecent = [];
+let zoomiesLeft = 0;
+
+function hasActionFrame(name) {
+  if (!ACTIONS[name]) return false;
+  const seq = F.sequences && F.sequences[name];
+  return !!((F.actions && F.actions[name]) || (seq && seq.frames && seq.frames.length));
+}
+
+function clearProp() {
+  if (!petProp) return;
+  petProp.textContent = '';
+  petProp.className = 'pet-prop';
+}
+
+function behaviorFrame(key) {
+  if (key === 'idle2') return F.idle[1] || F.idle[0];
+  if (key && key !== 'idle' && F.actions && F.actions[key]) return F.actions[key];
+  return F.idle[0];
+}
+
+function playBehavior(name) {
+  const fx = BEHAVIOR_FX[name];
+  if (!fx || currentForm !== 'custom' || mode === 'drag' || !F.idle.length) return;
+  const mySession = bumpSession();
+  clearBehaviorTimers();
+  mode = 'act';
+  if (rigOn) disableRig();
+  pet.classList.remove('walking', 'running', 'run-seq', ...ACT_CLASSES, ...BEH_CLASSES, ...NAP_CLASSES);
+  pet.classList.toggle('face-left', Math.random() < 0.5);
+  clearProp();
+  pet.classList.add('acting', 'beh-' + name);
+  const url = behaviorFrame(fx.frame);
+  if (url) crossfadeTo(url, 380);
+  if (fx.prop && petProp) {
+    petProp.textContent = fx.prop;
+    petProp.classList.add('prop-' + name);
+  }
+  if (!quiet && Math.random() < 0.4) say(fx.label, 'happy');
+  actTimer = setTimeout(() => {
+    if (session !== mySession) return;
+    setIdle();
+    pet.classList.remove('face-left');
+    if (F.idle.length) crossfadeTo(F.idle[0], 420);
+    if (rig) enableRig();
+    scheduleWander();
+  }, fx.ms);
+}
+
+// ---------- 写代码时：猫趴在键盘旁边睡觉，你敲的每一下都变成往上飘的符号 ----------
+let vibePhaseState = 'free';
+const napZzz = document.getElementById('nap-zzz');
+
+function enterNap() {
+  if (currentForm !== 'custom' || mode === 'drag' || mode === 'nap' || mode === 'run') return;
+  bumpSession();
+  clearBehaviorTimers();
+  zoomiesLeft = 0;
+  if (rigOn) disableRig();
+  mode = 'nap';
+  pet.classList.remove('walking', 'running', 'run-seq', 'face-left', 'acting', ...ACT_CLASSES, ...BEH_CLASSES);
+  clearProp();
+  pet.classList.add('vibe-sleeping');
+  vibeEl.classList.add('vibe-sleeping');
+  const url = (F.actions && F.actions.sleep) || F.idle[1] || F.idle[0];
+  if (url) crossfadeTo(url, 600);
+  // 睡着也不是一动不动：偶尔抖抖耳朵、蹬蹬腿
+  sleepCycleTimer = setInterval(() => {
+    if (mode !== 'nap' || Math.random() < 0.55) return;
+    restartClass(pet, 'nap-twitch');
+  }, 2600);
+}
+
+function wakeFromNap() {
+  if (mode !== 'nap') return;
+  clearBehaviorTimers();
+  mode = 'idle';
+  pet.classList.remove(...NAP_CLASSES);
+  vibeEl.classList.remove('vibe-sleeping');
+  if (F.idle.length) crossfadeTo(F.idle[0], 450);
+  if (vibeOn) {
+    playBehavior(Math.random() < 0.5 ? 'yawn' : 'stretch');
+    if (!quiet && Math.random() < 0.5) say('睡醒啦~ 你歇会儿，我去玩会儿', 'happy');
+  } else {
+    if (rig) enableRig();
+    scheduleWander();
+  }
+}
+
 // ---------- 写代码氛围模式：跟着键盘/鼠标节奏拍爪子、冒代码粒子、显示 KPM 与连击 ----------
 const vibeEl = document.getElementById('vibe');
 const vibeParticles = document.getElementById('vibe-particles');
@@ -750,13 +884,16 @@ function restartClass(el, cls) {
 
 function spawnVibeParticle(level) {
   const now = performance.now();
-  const gap = level === 'fire' ? 45 : level === 'flow' ? 70 : 110;
-  if (now - vibeLastParticle < gap || vibeParticles.childElementCount >= VIBE_MAX_PARTICLES) return;
+  const napping = mode === 'nap';
+  // 猫睡着时符号就是主角：每敲一下几乎都冒一个，从键盘上方飘起
+  const gap = napping ? 28 : level === 'fire' ? 45 : level === 'flow' ? 70 : 110;
+  const max = napping ? VIBE_MAX_PARTICLES + 12 : VIBE_MAX_PARTICLES;
+  if (now - vibeLastParticle < gap || vibeParticles.childElementCount >= max) return;
   vibeLastParticle = now;
   const p = document.createElement('span');
   p.className = 'vibe-particle';
   p.textContent = VibeMath.pickParticle();
-  p.style.left = `${30 + Math.random() * 160}px`;
+  p.style.left = napping ? `${48 + Math.random() * 110}px` : `${30 + Math.random() * 160}px`;
   p.style.setProperty('--dx', `${Math.round((Math.random() * 2 - 1) * 28)}px`);
   p.style.setProperty('--rot', `${Math.round((Math.random() * 2 - 1) * 25)}deg`);
   p.addEventListener('animationend', () => p.remove(), { once: true });
@@ -776,7 +913,17 @@ function renderVibe() {
     vibeEl.classList.add(`vibe-${level}`);
     vibeLevel = level;
   }
-  vibeEl.classList.toggle('vibe-resting', vibeMeter.idleMs(t) > 6000);
+  const idleMs = vibeMeter.idleMs(t);
+  vibeEl.classList.toggle('vibe-resting', idleMs > 6000);
+  const ph = BehaviorMath.vibePhase(vibePhaseState, idleMs);
+  if (ph !== vibePhaseState) {
+    vibePhaseState = ph;
+    if (ph === 'typing') enterNap();
+    else wakeFromNap();
+  } else if (ph === 'typing' && (mode === 'idle' || mode === 'walk')) {
+    if (mode === 'walk') stopWander();
+    enterNap();   // 动作刚做完而你还在敲：回键盘边接着睡
+  }
 }
 
 function onVibeInput(p) {
@@ -802,6 +949,8 @@ function applyVibe(on) {
   clearInterval(vibeLoop); vibeLoop = null;
   vibeMeter.reset();
   vibeParticles.textContent = '';
+  vibePhaseState = 'free';
+  if (!on) wakeFromNap();
   if (on) {
     if (mode === 'walk') stopWander();   // 原地坐好陪你写代码
     renderVibe();
