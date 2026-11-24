@@ -890,6 +890,12 @@ function refreshTrayMenu() {
         if (panelWin) panelWin.webContents.send('state-updated', publicState());
       }
     },
+    {
+      label: '⌨️ 写代码氛围模式',
+      type: 'checkbox',
+      checked: !!state.vibe,
+      click: () => setVibe(!state.vibe)
+    },
     { type: 'separator' },
     { label: '退出', click: () => { app.isQuitting = true; app.quit(); } }
   ]);
@@ -1154,6 +1160,7 @@ function publicState() {
     displayMode: state.displayMode,
     autoLaunch: state.autoLaunch,
     quiet: state.quiet,
+    vibe: !!state.vibe,
     stats: state.stats,
     mealMenus: state.mealMenus,
     games: state.games,
@@ -1652,6 +1659,14 @@ handle('set-quiet', (e, enabled) => {
   return publicState();
 });
 
+// 写代码氛围模式
+handle('set-vibe', (e, enabled) => {
+  setVibe(enabled);
+  return publicState();
+});
+// 没有全局输入源时（如 Windows/Linux 未装 uiohook）：控制台内的按键也算敲击（只传“发生了”，不传键值）
+on('vibe-key', () => { if (state.vibe && !vibe.hook && !vibe.pollTimer) sendVibe('key'); });
+
 // 桌宠点击穿透控制：鼠标在宠物上时可交互，否则穿透
 on('set-ignore-mouse', (e, ignore) => {
   if (petWin) petWin.setIgnoreMouseEvents(ignore, { forward: true });
@@ -1724,6 +1739,99 @@ function startDemoSequence() {
 
 handle('demo-start', () => { startDemoSequence(); return { ok: true }; });
 
+// ---------- 写代码氛围模式：全局输入活动 ----------
+// 隐私：只向桌宠转发 { kind, t }（key/click/mouse），绝不读取或传递键值内容。
+// 来源优先级：可选依赖 uiohook-napi（全平台，需辅助功能权限）→ macOS ioreg 空闲时间轮询 → 仅鼠标 + 控制台内按键。
+const vibe = { hook: null, pollTimer: null, polling: false, demoTimer: null, lastCursor: null, cursorMovedAt: 0, lastMouseSent: 0 };
+const VIBE_POLL_MS = 250;
+
+function sendVibe(kind) {
+  if (!petWin || petWin.isDestroyed()) return;
+  petWin.webContents.send('vibe-input', { kind, t: Date.now() });
+}
+
+function startVibeHook() {
+  let mod;
+  try { mod = require('uiohook-napi'); } catch (e) { return false; }
+  try {
+    const hook = mod.uIOhook;
+    hook.on('keydown', () => sendVibe('key'));
+    hook.on('mousedown', () => sendVibe('click'));
+    hook.start();
+    vibe.hook = hook;
+    return true;
+  } catch (e) {
+    console.log('[vibe] uiohook unavailable:', e && e.message);
+    return false;
+  }
+}
+
+// macOS 无需原生模块：HIDIdleTime 是距最近一次键鼠事件的纳秒数。
+// 一个轮询周期内有输入、而光标没动 → 视为在敲键盘（估算值，每周期最多记一次）。
+function pollHidIdle() {
+  if (vibe.polling) return;
+  vibe.polling = true;
+  let out = '';
+  let child;
+  try {
+    child = spawn('ioreg', ['-c', 'IOHIDSystem', '-r', '-k', 'HIDIdleTime', '-d', '1']);
+  } catch (e) { vibe.polling = false; return; }
+  child.stdout.on('data', (d) => { out += d; });
+  child.on('error', () => { vibe.polling = false; });
+  child.on('close', () => {
+    vibe.polling = false;
+    if (!state.vibe) return;
+    const m = out.match(/"HIDIdleTime"\s*=\s*(\d+)/);
+    if (!m) return;
+    const idleMs = Number(m[1]) / 1e6;
+    if (idleMs < VIBE_POLL_MS && Date.now() - vibe.cursorMovedAt > VIBE_POLL_MS) sendVibe('key');
+  });
+}
+
+function startVibeSources() {
+  if (vibe.hook || vibe.pollTimer) return;
+  if (startVibeHook()) return;
+  if (process.platform === 'darwin') vibe.pollTimer = setInterval(pollHidIdle, VIBE_POLL_MS);
+}
+
+function stopVibeSources() {
+  if (vibe.hook) {
+    try { vibe.hook.removeAllListeners(); vibe.hook.stop(); } catch (e) { /* ignore */ }
+    vibe.hook = null;
+  }
+  if (vibe.pollTimer) { clearInterval(vibe.pollTimer); vibe.pollTimer = null; }
+}
+
+// 光标移动也算“氛围能量”（不计入连击/KPM），由 cursorTimer 调用
+function trackVibeCursor(c) {
+  const last = vibe.lastCursor;
+  vibe.lastCursor = { x: c.x, y: c.y };
+  if (!last || !state.vibe) return;
+  if (Math.abs(c.x - last.x) + Math.abs(c.y - last.y) < 4) return;
+  const now = Date.now();
+  vibe.cursorMovedAt = now;
+  if (!vibe.hook && now - vibe.lastMouseSent >= 200) { vibe.lastMouseSent = now; sendVibe('mouse'); }
+}
+
+// 自测钩子：VIBE_DEMO=1 打开氛围模式并模拟一阵阵敲代码
+function startVibeDemo() {
+  if (!state.vibe) setVibe(true);
+  let burst = 0;
+  vibe.demoTimer = setInterval(() => {
+    burst = (burst + 1) % 60;
+    if (burst < 40) sendVibe(Math.random() < 0.08 ? 'click' : 'key');
+  }, 90);
+}
+
+function setVibe(enabled) {
+  state.vibe = !!enabled;
+  saveState();
+  if (state.vibe) startVibeSources(); else stopVibeSources();
+  if (petWin && !petWin.isDestroyed()) petWin.webContents.send('vibe-changed', state.vibe);
+  if (tray) refreshTrayMenu();
+  if (panelWin && !panelWin.isDestroyed()) panelWin.webContents.send('state-updated', publicState());
+}
+
 // ---------- 生命周期 ----------
 let reminderTimer = null;
 let cursorTimer = null;
@@ -1755,12 +1863,15 @@ app.whenReady().then(() => {
   if (process.env.RUN_DEMO === '1') setTimeout(() => {
     if (petWin) petWin.webContents.send('pet-say', { action: 'run' });
   }, 3500);
+  if (state.vibe) startVibeSources();
+  if (process.env.VIBE_DEMO === '1') setTimeout(startVibeDemo, 2500);
 
   // 光标位置广播：让桌宠的视线/身体跟随用户（10Hz，轻量）
   cursorTimer = setInterval(() => {
     if (!petWin || petWin.isDestroyed()) return;
     try {
       const c = screen.getCursorScreenPoint();
+      trackVibeCursor(c);
       const b = petWin.getBounds();
       petWin.webContents.send('cursor', {
         x: c.x - (b.x + b.width / 2),
@@ -1793,6 +1904,8 @@ app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   if (reminderTimer) clearInterval(reminderTimer);
   if (cursorTimer) clearInterval(cursorTimer);
+  if (vibe.demoTimer) clearInterval(vibe.demoTimer);
+  stopVibeSources();
   clearDemoTimers();
   if (pomo.timer) clearInterval(pomo.timer);   // 只停计时器，保留 state.pomo 供下次续跑
   for (const child of genChildren) { try { child.kill('SIGKILL'); } catch (e) { /* already gone */ } }

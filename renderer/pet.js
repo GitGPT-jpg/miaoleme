@@ -238,7 +238,8 @@ const IDLE_LINES = [
 let quiet = false;
 setInterval(() => {
   if (quiet || mode !== 'idle' || dragging()) return;
-  if (Math.random() < 0.5) say(IDLE_LINES[Math.floor(Math.random() * IDLE_LINES.length)], 'happy');
+  const lines = vibeOn ? VIBE_LINES : IDLE_LINES;
+  if (Math.random() < 0.5) say(lines[Math.floor(Math.random() * lines.length)], 'happy');
 }, 60 * 1000);
 
 // ---------- 2D 骨骼（内置猫：尾→身→头 层级变换，持续动画） ----------
@@ -670,7 +671,7 @@ function scheduleWander() {
 }
 
 async function startWander() {
-  if (currentForm !== 'custom' || mode !== 'idle') { scheduleWander(); return; }
+  if (currentForm !== 'custom' || mode !== 'idle' || vibeOn) { scheduleWander(); return; }
   const names = displayMode === 'photo' ? [] : Object.keys(ACTIONS).filter((n) => (F.sequences && F.sequences[n]) || (F.actions && F.actions[n]));
   if (names.length && Math.random() < 0.5) {
     playAction(names[Math.floor(Math.random() * names.length)]);
@@ -726,6 +727,92 @@ function stopWander() {
   scheduleWander();
 }
 
+// ---------- 写代码氛围模式：跟着键盘/鼠标节奏拍爪子、冒代码粒子、显示 KPM 与连击 ----------
+const vibeEl = document.getElementById('vibe');
+const vibeParticles = document.getElementById('vibe-particles');
+const vibeKpmEl = document.getElementById('vibe-kpm');
+const vibeComboEl = document.getElementById('vibe-combo');
+const vibePaws = [vibeEl.querySelector('.vibe-paw-l'), vibeEl.querySelector('.vibe-paw-r')];
+const vibeMeter = VibeMath.createMeter();
+const VIBE_MAX_PARTICLES = 16;
+const VIBE_LINES = ['这段代码有点东西 ✨', '手速起飞了喵！', '键盘冒烟啦 🔥', 'bug 退散！', '一把梭，冲！', '记得 commit 哦~'];
+let vibeOn = false;
+let vibeLoop = null;
+let vibePaw = 0;
+let vibeLastParticle = 0;
+let vibeLevel = '';
+
+function restartClass(el, cls) {
+  el.classList.remove(cls);
+  void el.offsetWidth;   // 强制回流，让同一动画能连续重播
+  el.classList.add(cls);
+}
+
+function spawnVibeParticle(level) {
+  const now = performance.now();
+  const gap = level === 'fire' ? 45 : level === 'flow' ? 70 : 110;
+  if (now - vibeLastParticle < gap || vibeParticles.childElementCount >= VIBE_MAX_PARTICLES) return;
+  vibeLastParticle = now;
+  const p = document.createElement('span');
+  p.className = 'vibe-particle';
+  p.textContent = VibeMath.pickParticle();
+  p.style.left = `${30 + Math.random() * 160}px`;
+  p.style.setProperty('--dx', `${Math.round((Math.random() * 2 - 1) * 28)}px`);
+  p.style.setProperty('--rot', `${Math.round((Math.random() * 2 - 1) * 25)}deg`);
+  p.addEventListener('animationend', () => p.remove(), { once: true });
+  vibeParticles.appendChild(p);
+}
+
+function renderVibe() {
+  const t = Date.now();
+  const kpm = vibeMeter.kpm(t);
+  const combo = vibeMeter.combo(t);
+  vibeKpmEl.textContent = String(kpm);
+  vibeComboEl.textContent = combo >= 5 ? `x${combo}` : '';
+  vibeEl.style.setProperty('--vibe', vibeMeter.intensity(t).toFixed(3));
+  const level = vibeMeter.level(t);
+  if (level !== vibeLevel) {
+    vibeEl.classList.remove(`vibe-${vibeLevel}`);
+    vibeEl.classList.add(`vibe-${level}`);
+    vibeLevel = level;
+  }
+  vibeEl.classList.toggle('vibe-resting', vibeMeter.idleMs(t) > 6000);
+}
+
+function onVibeInput(p) {
+  if (!vibeOn || !p) return;
+  const t = Date.now();
+  const prev = vibeMeter.combo(t);
+  const combo = vibeMeter.hit(t, p.kind);
+  if (p.kind === 'mouse') return;   // 鼠标移动只加一点热度
+  vibePaw = 1 - vibePaw;
+  restartClass(vibePaws[vibePaw], 'tap');
+  restartClass(pet, 'vibe-bounce');
+  spawnVibeParticle(vibeMeter.level(t));
+  const m = VibeMath.milestone(prev, combo);
+  if (m && !quiet && mode === 'idle') say(m >= 100 ? `${m} 连击！键盘要冒烟啦 🔥` : `${m} 连击！`, 'happy');
+}
+
+function applyVibe(on) {
+  on = !!on;
+  if (on === vibeOn) return;
+  vibeOn = on;
+  vibeEl.classList.toggle('hidden', !on);
+  pet.classList.toggle('vibing', on);
+  clearInterval(vibeLoop); vibeLoop = null;
+  vibeMeter.reset();
+  vibeParticles.textContent = '';
+  if (on) {
+    if (mode === 'walk') stopWander();   // 原地坐好陪你写代码
+    renderVibe();
+    vibeLoop = setInterval(renderVibe, 120);
+    if (!quiet) say('写代码模式开启！我陪你敲 ⌨️', 'happy');
+  }
+}
+
+window.api.onVibeInput(onVibeInput);
+window.api.onVibeChanged(applyVibe);
+
 // ---------- 来自主进程的事件 ----------
 window.api.onFormChanged((form) => applyForm(form));
 window.api.onPetSay((msg) => {
@@ -746,6 +833,7 @@ window.api.onRigRefresh(() => loadRig());
 // 初始化
 window.api.getState().then((s) => {
   quiet = !!s.quiet;
+  applyVibe(s.vibe);
   displayMode = s.displayMode === 'rig' ? 'rig' : 'photo';
   applyForm(s.form || 'custom');
   renderFeedBadge(s.feed);

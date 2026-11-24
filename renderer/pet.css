@@ -606,3 +606,148 @@ html, body {
 }
 
 .hidden { opacity: 0; pointer-events: none; }
+
+/* ---------- 写代码氛围模式 ---------- */
+#vibe {
+  --vibe: 0;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;   /* 纯装饰：不参与点击穿透判断 */
+}
+/* #vibe 不建层叠上下文：光晕按 DOM 顺序落在桌宠身后，键盘/爪子/HUD 盖在桌宠前面 */
+.vibe-hud, .vibe-desk, #vibe-particles { z-index: 55; }
+#vibe.hidden { display: none; }
+#vibe > * { pointer-events: none; }
+
+.vibe-glow {
+  position: absolute;
+  left: 50%;
+  bottom: 30px;
+  width: 190px;
+  height: 150px;
+  transform: translateX(-50%) scale(calc(0.85 + var(--vibe) * 0.25));
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(0, 229, 255, 0.55), rgba(124, 77, 255, 0.28) 55%, transparent 100%);
+  opacity: calc(0.15 + var(--vibe) * 0.85);
+  filter: blur(10px);
+  transition: opacity .25s ease;
+  animation: vibeHue 6s linear infinite;
+}
+#vibe.vibe-fire .vibe-glow {
+  background: radial-gradient(closest-side, rgba(255, 160, 0, 0.6), rgba(255, 45, 85, 0.32) 55%, transparent 100%);
+}
+#vibe.vibe-resting .vibe-glow { opacity: 0.12; }
+@keyframes vibeHue { to { filter: blur(10px) hue-rotate(360deg); } }
+
+.vibe-hud {
+  position: absolute;
+  top: 62px;
+  right: 6px;
+  text-align: right;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  color: #7df9ff;
+  text-shadow: 0 0 6px rgba(0, 229, 255, 0.9), 0 1px 2px rgba(0,0,0,0.6);
+}
+.vibe-kpm b { font-size: 18px; font-weight: 700; }
+.vibe-kpm span { font-size: 9px; margin-left: 2px; opacity: .8; }
+.vibe-combo { font-size: 14px; font-weight: 700; color: #ffd54f; min-height: 16px; }
+#vibe.vibe-fire .vibe-hud { color: #ffb74d; text-shadow: 0 0 8px rgba(255, 112, 67, 0.95), 0 1px 2px rgba(0,0,0,0.6); }
+#vibe.vibe-resting .vibe-hud { opacity: .45; }
+
+/* 桌宠面前的小键盘 + 两只爪子 */
+.vibe-desk {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  width: 132px;
+  height: 46px;
+  transform: translateX(-50%);
+}
+.vibe-keyboard {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 22px;
+  padding: 4px 6px;
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+  border-radius: 6px;
+  background: linear-gradient(#2b2f3a, #1b1e26);
+  box-shadow: 0 0 calc(4px + var(--vibe) * 14px) rgba(0, 229, 255, calc(0.25 + var(--vibe) * 0.6)), 0 3px 6px rgba(0,0,0,0.35);
+}
+.vibe-keyboard i {
+  border-radius: 2px;
+  background: rgba(125, 249, 255, calc(0.25 + var(--vibe) * 0.6));
+  animation: vibeKeys 1.8s linear infinite;
+}
+.vibe-keyboard i:nth-child(odd) { animation-delay: -.6s; }
+.vibe-keyboard i:nth-child(3n) { animation-delay: -1.2s; }
+@keyframes vibeKeys { 0%, 100% { filter: hue-rotate(0deg); } 50% { filter: hue-rotate(140deg); } }
+
+.vibe-paw {
+  position: absolute;
+  bottom: 12px;
+  width: 26px;
+  height: 20px;
+  border-radius: 50% 50% 45% 45%;
+  background: #fff7f0;
+  box-shadow: inset 0 -3px 0 rgba(0,0,0,0.08), 0 2px 3px rgba(0,0,0,0.25);
+  transform-origin: 50% 100%;
+  transform: translateY(-8px) rotate(var(--tilt, 0deg));
+  transition: transform .12s ease-out;
+}
+.vibe-paw::after {   /* 粉色肉垫 */
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 9px;
+  width: 9px;
+  height: 7px;
+  margin-left: -4.5px;
+  border-radius: 50%;
+  background: #ff9fb6;
+}
+.vibe-paw-l { left: 24px; --tilt: -8deg; }
+.vibe-paw-r { right: 24px; --tilt: 8deg; }
+.vibe-paw.tap { animation: vibeTap .16s ease-out; }
+@keyframes vibeTap {
+  0% { transform: translateY(-8px) rotate(var(--tilt)); }
+  45% { transform: translateY(2px) rotate(var(--tilt)) scaleY(0.88); }
+  100% { transform: translateY(-8px) rotate(var(--tilt)); }
+}
+
+/* 冒出的代码粒子 */
+#vibe-particles { position: absolute; inset: 0; overflow: hidden; }
+.vibe-particle {
+  position: absolute;
+  bottom: 44px;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: #7df9ff;
+  text-shadow: 0 0 6px rgba(0, 229, 255, 0.9);
+  animation: vibeFloat 1.3s ease-out forwards;
+}
+#vibe.vibe-flow .vibe-particle { color: #b388ff; text-shadow: 0 0 6px rgba(179, 136, 255, 0.95); }
+#vibe.vibe-fire .vibe-particle { color: #ffcc80; text-shadow: 0 0 8px rgba(255, 112, 67, 0.95); font-size: 14px; }
+@keyframes vibeFloat {
+  0% { transform: translate(0, 0) rotate(0deg) scale(.7); opacity: 0; }
+  15% { opacity: 1; }
+  100% { transform: translate(var(--dx), -150px) rotate(var(--rot)) scale(1.1); opacity: 0; }
+}
+
+/* 每次敲击桌宠轻轻点一下头（作用在 #pet 上，不覆盖图片自身的呼吸/走路动画） */
+#pet.vibing { transform-origin: 50% 100%; }
+#pet.vibe-bounce { animation: vibeBounce .18s ease-out; }
+@keyframes vibeBounce {
+  0%, 100% { transform: translateY(0) scale(1, 1); }
+  45% { transform: translateY(2px) scale(1.03, 0.96); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vibe-glow, .vibe-keyboard i { animation: none; }
+  #pet.vibe-bounce { animation: none; }
+}

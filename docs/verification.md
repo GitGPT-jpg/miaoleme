@@ -266,3 +266,18 @@ R2 → R3 修复：喂饭无待喂请求时不标记任何餐次且不加亲密�
 
 - macOS（Electron 45）：`dist/喵了么-0.6.4-arm64.dmg`、`dist/喵了么-0.6.4-arm64-mac.zip`
 - Windows x64（Electron 33，受 IM 100MB 上限）：`dist/喵了么-0.6.4-win.zip`、`download-page/miaoleme-win-x64-0.6.4.tar.xz`（免安装，SHA-256 见下载页）
+
+## 八、写代码氛围模式（v0.8）
+
+| 项 | 验证方式 | 结果 |
+|---|---|---|
+| 计量逻辑（KPM / 连击 / 档位 / 里程碑 / 粒子） | `test/vibe.test.js` | PASS |
+| 状态持久化（默认关闭，仅接受布尔） | `test/store.test.js`「vibe 写代码氛围模式」 | PASS |
+| IPC 单次注册、will-quit 清理顺序 | `test/main-structure.test.js` | PASS |
+| 渲染冒烟：`VIBE_DEMO=1` 启动 9 秒后读取桌宠窗口 DOM | Electron 45 本机运行 | PASS：`#vibe` 可见，档位 `vibe-fire`，KPM 468，连击 x8，在屏粒子 8 个，`#pet` 带 `vibing`/`vibe-bounce` |
+| 点击穿透 | `#vibe` 及子元素 `pointer-events: none`，不在 `overInteractive()` 命中范围内 | 代码检查 |
+
+明确未验证项：
+- `uiohook-napi` 全局钩子路径：未安装该可选依赖，NOT_RUN。
+- `ioreg` 估算路径的真实手速表现：只验证了命令可用（单次约 23ms），未做真人打字录屏对比。
+- 参考视频（抖音「程序员八阿哥：写代码，必须要有氛围」）无法在本机抓取，效果按 Bongo Cat 类「桌宠陪敲代码」实现，细节可能与原视频不同。

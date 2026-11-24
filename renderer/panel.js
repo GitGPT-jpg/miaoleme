@@ -481,6 +481,15 @@ document.getElementById('display-mode').value = 'photo';
 document.getElementById('quiet-mode').addEventListener('change', async (e) => {
   await window.api.setQuiet(e.target.checked);
 });
+let vibeOn = false;
+document.getElementById('vibe-mode').addEventListener('change', async (e) => {
+  const s = await window.api.setVibe(e.target.checked);
+  vibeOn = !!(s && s.vibe);
+});
+// 没有全局输入源时，至少让在控制台里的敲击也能驱动桌宠（主进程会自行判断是否需要）
+document.addEventListener('keydown', (e) => {
+  if (vibeOn && !e.repeat) window.api.vibeKey();
+});
 
 // PLACEHOLDER_POMO_GAMES
 
@@ -611,6 +620,8 @@ function renderAll(s) {
   if (s.pomodoro) { setIfIdle(pomoWork, s.pomodoro.workMin); setIfIdle(pomoBreak, s.pomodoro.breakMin); }
   document.getElementById('autolaunch').checked = !!s.autoLaunch;
   document.getElementById('quiet-mode').checked = !!s.quiet;
+  vibeOn = !!s.vibe;
+  document.getElementById('vibe-mode').checked = vibeOn;
   document.getElementById('display-mode').value = s.displayMode === 'rig' ? 'rig' : 'photo';
   renderMeetings(s.meetings);
   renderDdls(s.ddls);
