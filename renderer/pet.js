@@ -633,7 +633,7 @@ function setRunFrame(on) {
 // 主进程会把窗口夹回工作区，目标跑到屏幕外的话猫会在边上原地踏步到冲刺结束。
 // 多屏下 availLeft 才是当前屏幕在全局坐标里的左边界，直接用 availWidth 会把副屏算错。
 function runTargetX(fromX) {
-  const dist = 150 + Math.random() * 120;
+  const dist = 220 + Math.random() * 300;
   const sc = window.screen || {};
   const left = (Number.isFinite(sc.availLeft) ? sc.availLeft : 0) + 20;
   const right = left + (sc.availWidth || 1440) - 280;
@@ -746,7 +746,7 @@ function scheduleWander() {
   clearTimeout(wanderTimer);
   // 写代码模式下你停手时，它更快地去过自己的小日子
   const free = vibeOn && vibePhaseState === 'free';
-  wanderTimer = setTimeout(startWander, free ? 1200 + Math.random() * 2300 : 3500 + Math.random() * 5000);
+  wanderTimer = setTimeout(startWander, free ? 900 + Math.random() * 1900 : 1800 + Math.random() * 3200);
 }
 
 async function startWander() {
@@ -762,23 +762,52 @@ async function startWander() {
   await ensurePos();
   if (session !== mySession || mode !== 'idle') return;  // 等待期间被拖拽/动作打断
   if (b === 'run' || b === 'zoomies') {
-    zoomiesLeft = b === 'zoomies' ? 2 : 0;
+    zoomiesLeft = b === 'zoomies' ? 2 + Math.floor(Math.random() * 2) : 0;
     if (b === 'zoomies' && !quiet && Math.random() < 0.6) say('突然想跑！冲冲冲！', 'happy');
     startRunDash();
     return;
   }
-  if (b === 'walk' && Math.random() < 0.35) { startPatrol(); return; }
+  if (b === 'walk' && Math.random() < 0.5) { startPatrol(); return; }
+  startRoam(1 + Math.floor(Math.random() * 3));
+}
+
+// 散步：走一段、停下张望、再走一段——真猫很少一口气走到底
+function roamBounds() {
+  const sc = window.screen || {};
+  const left = (Number.isFinite(sc.availLeft) ? sc.availLeft : 0) + 20;
+  return { left, right: left + (sc.availWidth || 1440) - 280 };
+}
+function startRoam(legs) {
+  if (mode !== 'idle' && mode !== 'patrol') { scheduleWander(); return; }
+  const mySession = session;
+  const { left, right } = roamBounds();
   const target = {
-    x: home.x + Math.round((Math.random() * 2 - 1) * 90),
-    y: home.y + Math.round((Math.random() * 2 - 1) * 36)
+    x: BehaviorMath.roamTargetX(cur.x, home.x, left, right),
+    y: Math.round(Math.max(home.y - 36, Math.min(home.y + 36, cur.y + (Math.random() * 2 - 1) * 24)))
   };
   const dx = target.x - cur.x;
-  if (Math.abs(dx) < 6 && Math.abs(target.y - cur.y) < 6) { scheduleWander(); return; }
+  if (Math.abs(dx) < 6 && Math.abs(target.y - cur.y) < 6) { mode = 'idle'; scheduleWander(); return; }
   pet.classList.toggle('face-left', dx < 0);
   mode = 'walk';
   setWalkFrame(true);
   moveLast = performance.now();
-  stepTo(target);
+  const more = legs > 1;
+  stepTo(target, more ? { onArrive: () => roamPause(mySession, legs - 1) } : undefined);
+}
+function roamPause(mySession, legs) {
+  if (session !== mySession) return;
+  mode = 'patrol';
+  clearInterval(walkTimer); walkTimer = null;
+  pet.classList.remove('walking', 'walk-slow');
+  if (F.idle.length) crossfadeTo(F.idle[0], 240);
+  const sniff = Math.random() < 0.4;
+  pet.classList.add(sniff ? 'sniff' : 'walk-look');     // 停下嗅一嗅，或者望一眼下一个去处
+  patrolLater(mySession, 700 + Math.random() * 900, () => {
+    pet.classList.remove('sniff', 'walk-look');
+    // 偶尔看着看着就突然冲出去
+    if (Math.random() < 0.25 && !(vibeOn && vibePhaseState === 'typing')) { mode = 'idle'; startRunDash(); return; }
+    startRoam(legs);
+  });
 }
 
 let lastMoveAt = 0;

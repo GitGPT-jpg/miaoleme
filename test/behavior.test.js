@@ -39,3 +39,16 @@ test('every default behavior has a positive weight and unique name', () => {
   assert.strictEqual(new Set(names).size, names.length);
   assert.ok(B.BEHAVIORS.every((b) => b.weight > 0));
 });
+
+test('roamTargetX walks a real distance and stays on screen', () => {
+  const seq = (vals) => { let i = 0; return () => vals[i++ % vals.length]; };
+  const x = B.roamTargetX(600, 600, 20, 1180, seq([0.5, 0.9]));
+  assert.ok(x - 600 >= 140, 'walks right at least 140px');
+  assert.strictEqual(B.roamTargetX(1150, 1100, 20, 1180, seq([0.5, 0.9])), 860);
+  assert.strictEqual(B.roamTargetX(30, 40, 20, 1180, seq([0.5, 0.1])), 320);
+});
+
+test('roamTargetX heads back toward home when it drifted far', () => {
+  const x = B.roamTargetX(1000, 300, 20, 1180, () => 0.9);
+  assert.ok(x < 1000);
+});
