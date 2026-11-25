@@ -185,7 +185,8 @@ test('奔跑帧写入序列槽位，不得混进动作帧', () => {
 
 test('生成帧必须下发 runSeq，且奔跑帧不走逐帧高度归一化', () => {
   const frames = extractFunctionBody('customFrames');
-  assert.match(frames, /runSeq: customRunSeq\(\)/, '用户生成帧返回 runSeq');
+  assert.match(frames, /const runSeq = customRunSeq\(\)/, '用户生成帧返回 runSeq');
+  assert.match(frames, /walkSeq: customWalkSeq\(runSeq\)/, '自定义猫走路用四腿步态帧');
   assert.match(frames, /runSeq: seq\.run/, '内置猫返回自己的 8 帧跑步序列');
   // 内置猫是 3D 素材而不是用户原图：raw-photo 会套白边卡片 + object-fit:cover，把透明帧裁掉
   assert.match(frames, /generated: true\s*\/\/ 内置猫/, '内置猫必须标成 generated，避免被当成原图');
@@ -335,4 +336,13 @@ test('主进程：纸箭头只在番茄休息或启动安顿后归还', () => {
   assert.match(SRC, /returnArrow\('startup'\)/);
   assert.match(SRC, /returnArrow\('pomo-break'\)/);
   assert.match(extractFunctionBody('returnArrow'), /shouldReturn/);
+});
+
+test('重做跑步失败要还原旧序列；启动时先找回孤儿帧再建窗', () => {
+  const job = extractFunctionBody('startGenJob');
+  assert.match(job, /const prevRunSeq = /, '清空前留底');
+  assert.match(job, /shouldRestoreRunSeq\(state\.customGenRunSeq, prevRunSeq/);
+  const ready = SRC.slice(SRC.indexOf('app.whenReady().then('));
+  assert.ok(ready.indexOf('recoverOrphanFrames()') < ready.indexOf('createPetWindow()'), '首帧就要用上找回的帧');
+  assert.ok(SRC.indexOf('function recoverOrphanFrames') > 0);
 });

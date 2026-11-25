@@ -44,7 +44,8 @@ const { restorePomodoro, pomoSnapshot } = require('./lib/pomodoro');
 const { buildBundledSequences, ACTION_META, WALK } = require('./lib/sequences');
 const arrowDomain = require('./lib/arrow');
 const { RIG_PARTS: RIG_PLAN, rigFilePath, coreRigPresent, optionalRigPresent } = require('./lib/rig');
-const { alphaBBox, alphaStats, heightScale, seqCanvas, seqPlacements } = require('./lib/frameNorm');
+const { alphaBBox, alphaStats, heightScale, seqCanvas, seqPlacements, needsKeying, keyOutBackground } = require('./lib/frameNorm');
+const { pickOrphanFrames, planRecovery, frameTs, shouldRestoreRunSeq } = require('./lib/recover');
 const { RUN_FRAMES, RUN_FRAME_MS, orderRunCycle } = require('./lib/run');
 // 提示词只有一份（lib/prompts.js），tools/gen-frames.js 共用，避免两边漂移
 const {
@@ -169,6 +170,14 @@ function customRunSeq() {
   return frames.length >= 4 ? { frames, frameMs: RUN_FRAME_MS } : null;
 }
 
+// 自定义猫的走路：有 8 帧步态时直接用这组四腿交替帧放慢播放（单张走路图平移看着像在滑），
+// 帧是横向画布，wide 让渲染层按跑步帧的展示框排版；硬切（fadeMs 0），淡化会把腿糊成重影
+const CUSTOM_WALK_FRAME_MS = 125;
+function customWalkSeq(runSeq) {
+  if (!runSeq || !runSeq.frames || runSeq.frames.length < 4) return null;
+  return { frames: runSeq.frames, frameMs: CUSTOM_WALK_FRAME_MS, fadeMs: 0, wide: true };
+}
+
 // 返回帧集合：{ idle, idleAlt, walk, walkAlt, happy, actions:{..., sleepAlt} }
 // 内置 3D 猫返回多帧组（呼吸/迈步/睡姿成对，供丝滑循环）；用户自定义图返回单帧（成对帧退化为同一张）
 function customFrames() {
@@ -182,7 +191,8 @@ function customFrames() {
         if (p && fs.existsSync(p)) { const u = fileToDataUrl(p); if (u) actions[k] = u; }
       });
     }
-    return { idle, idleAlt: idle, walk, walkAlt: walk, happy: idle, actions, meta: ACTION_META, sequences: {}, walkSeq: null, runSeq: customRunSeq(), generated: true };
+    const runSeq = customRunSeq();
+    return { idle, idleAlt: idle, walk, walkAlt: walk, happy: idle, actions, meta: ACTION_META, sequences: {}, walkSeq: customWalkSeq(runSeq), runSeq, generated: true };
   }
   if (state.customImage && fs.existsSync(state.customImage)) {
     const u = fileToDataUrl(state.customImage);
@@ -356,6 +366,7 @@ async function genAvatarFrame(srcPath, poseName, prompt, refs) {
         return { ok: false, error: 'quality_' + (q.reason || 'rejected') };
       }
       if (poseName === 'idle' && q.bbox) poseRefBox = { w: q.bbox.w, h: q.bbox.h };
+      keyFrameIfOpaque(outPath);
       if (!isRun) normalizePoseFrame(outPath);
     }
     return { ok: true, path: outPath };
@@ -417,6 +428,22 @@ function checkFrameQuality(file, ref) {
   } catch (e) {
     return { ok: false, reason: 'unreadable' };
   }
+}
+
+// 不带透明通道的浅色底帧：从边缘泛洪抠掉背景，返回是否改写了文件
+function keyFrameIfOpaque(file) {
+  if (!/\.png$/i.test(String(file || ""))) return false;
+  try {
+    const img = nativeImage.createFromPath(file);
+    if (img.isEmpty()) return false;
+    const { width, height } = img.getSize();
+    const bmp = Buffer.from(img.getBitmap());
+    if (!needsKeying(bmp, width, height)) return false;
+    if (keyOutBackground(bmp, width, height) < width * height * 0.05) return false;
+    const out = nativeImage.createFromBitmap(bmp, { width, height });
+    fs.writeFileSync(file, out.toPNG());
+    return true;
+  } catch (e) { return false; }
 }
 
 // 姿势帧归一化：裁剪透明边、统一高度，减少序列播放时的忽大忽小
@@ -680,8 +707,11 @@ function startGenJob(sourcePath, sourceId, only, refs) {
   poseRefBox = null;
   genRunner = runner;
   genJob = runner.job;
-  // 整组重做奔跑序列前清空旧槽位：regenerate 期间先退回走路帧，也避免新旧比例混播
-  if (tasks.some((t) => runIndexOfKey(t.key) >= 0) && (state.customGenRunSeq || []).some(Boolean)) {
+  // 整组重做奔跑序列前清空旧槽位：regenerate 期间先退回走路帧，也避免新旧比例混播。
+  // 旧序列先留底：新的一组没有 8 帧全部成功（失败/取消/中断）时要还原，否则猫从此只剩一张图平移
+  const prevRunSeq = (state.customGenRunSeq || []).slice();
+  const redoRun = tasks.some((t) => runIndexOfKey(t.key) >= 0);
+  if (redoRun && prevRunSeq.some(Boolean)) {
     state.customGenRunSeq = [];
     saveState();
     broadcastCustomImage();
@@ -692,6 +722,12 @@ function startGenJob(sourcePath, sourceId, only, refs) {
 
   runner.run().then((snap) => {
     if (genJob !== runner.job) return;
+    if (redoRun && shouldRestoreRunSeq(state.customGenRunSeq, prevRunSeq, (f) => fs.existsSync(f))) {
+      state.customGenRunSeq = prevRunSeq;
+      saveState();
+      dataUrlCache.clear();
+      broadcastCustomImage();
+    }
     // 跑步序列整组归一化后再刷新渲染层，避免帧间忽大忽小
     if (normalizeRunSequence() > 0) { dataUrlCache.clear(); broadcastCustomImage(); }
     if (coreRigPresent(app.getPath('userData'), (f) => fs.existsSync(f))) {
@@ -1970,7 +2006,43 @@ function setVibe(enabled) {
 // ---------- 生命周期 ----------
 let reminderTimer = null;
 let cursorTimer = null;
+// 找回磁盘上还在、但 store 已经不引用的生成帧（旧版重做跑步失败会清空整组）。
+// 必须在任何 cleanupOldGenFiles 之前，也在建窗前，首帧就能用上
+function recoverOrphanFrames() {
+  if (!state.customGenIdle || !fs.existsSync(state.customGenIdle)) return [];
+  try {
+    const dir = app.getPath('userData');
+    const picked = pickOrphanFrames(fs.readdirSync(dir), frameTs(path.basename(state.customGenIdle)));
+    const full = (n) => (n ? path.join(dir, n) : null);
+    picked.run = picked.run.map(full);
+    Object.keys(picked.actions).forEach((k) => { picked.actions[k] = full(picked.actions[k]); });
+    const plan = planRecovery(state, picked, (f) => fs.existsSync(f));
+    if (!plan.changed.length) return [];
+    state.customGenRunSeq = plan.state.customGenRunSeq;
+    state.customGenActions = plan.state.customGenActions;
+    plan.changed.filter((k) => k !== 'run').forEach((k) => {
+      const f = state.customGenActions[k];
+      if (keyFrameIfOpaque(f)) normalizePoseFrame(f);
+    });
+    saveState();
+    if (plan.changed.includes('run')) normalizeRunSequence();
+    dataUrlCache.clear();
+    return plan.changed;
+  } catch (e) { return []; }
+}
+
+// 已在 store 里但没带透明通道的姿势帧（早期生成的），启动时补抠一次
+function keyExistingPoseFrames() {
+  const files = Object.values(state.customGenActions || {}).filter((f) => f && fs.existsSync(f));
+  let n = 0;
+  files.forEach((f) => { if (keyFrameIfOpaque(f)) { normalizePoseFrame(f); n++; } });
+  if (n) dataUrlCache.clear();
+  return n;
+}
+
 app.whenReady().then(() => {
+  recoverOrphanFrames();
+  keyExistingPoseFrames();
   createPetWindow();
   createPanelWindow();
   buildTray();

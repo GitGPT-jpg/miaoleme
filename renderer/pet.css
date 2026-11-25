@@ -341,6 +341,15 @@ html, body {
   50%      { transform: scaleX(-1) translateY(-4px) scale(1.03, 0.97); }
 }
 
+/* 自定义猫走路复用四腿步态帧（放慢播放）：腿的交替在帧里，去掉整图摇摆，展示框同跑步 */
+#pet.form-custom.walking.walk-seq .pet-photo-img {
+  width: 200px;
+  max-height: 130px;
+  animation: none;
+  transform: none;
+}
+#pet.form-custom.walking.walk-seq.face-left .pet-photo-img { transform: scaleX(-1); }
+
 .hidden { opacity: 0; pointer-events: none; }
 
 /* ---------- 写代码氛围模式 ---------- */

@@ -112,7 +112,7 @@ function setIdle() {
   clearBehaviorTimers();
   interruptOwnLife();
   mode = 'idle';
-  pet.classList.remove('walking', 'running', 'run-seq', 'acting', ...ACT_CLASSES, ...BEH_CLASSES, ...NAP_CLASSES);
+  pet.classList.remove('walking', 'running', 'run-seq', 'walk-seq', 'acting', ...ACT_CLASSES, ...BEH_CLASSES, ...NAP_CLASSES);
   clearProp();
 }
 
@@ -500,7 +500,7 @@ function beginDrag(e) {
   clearBehaviorTimers();
   interruptOwnLife();
   zoomiesLeft = 0;
-  pet.classList.remove('walking', 'running', 'run-seq', 'acting', ...ACT_CLASSES, ...BEH_CLASSES, ...NAP_CLASSES);
+  pet.classList.remove('walking', 'running', 'run-seq', 'walk-seq', 'acting', ...ACT_CLASSES, ...BEH_CLASSES, ...NAP_CLASSES);
   vibeEl.classList.remove('vibe-sleeping');
   clearProp();
   pet.classList.add('dragging');
@@ -594,18 +594,22 @@ function setWalkFrame(on) {
   if (on && rigOn) disableRig();
   if (on) {
     pet.classList.add('walking');
-    const seq = (F.walkSeq && F.walkSeq.frames && F.walkSeq.frames.length > 1) ? F.walkSeq.frames : F.walk;
-    const frameMs = (F.walkSeq && F.walkSeq.frameMs) || 260;
-    const fadeMs = (F.walkSeq && F.walkSeq.fadeMs) || 140;
+    const ws = F.walkSeq;
+    const seq = (ws && ws.frames && ws.frames.length > 1) ? ws.frames : F.walk;
+    const frameMs = (ws && ws.frameMs) || 260;
+    // fadeMs 0 = 四腿步态帧硬切；淡化会把前后两帧的腿叠成重影
+    const fadeMs = (ws && Number.isFinite(ws.fadeMs)) ? ws.fadeMs : 140;
+    const show = (src) => (fadeMs > 0 ? crossfadeTo(src, fadeMs) : hardCutTo(src));
+    pet.classList.toggle('walk-seq', !!(ws && ws.wide && seq === ws.frames));
     let tick = 0;
-    if (seq.length) crossfadeTo(seq[0], fadeMs);
+    if (seq.length) show(seq[0]);
     walkTimer = setInterval(() => {
       if (seq.length < 2) return;
       tick = (tick + 1) % seq.length;
-      crossfadeTo(seq[tick], fadeMs);
+      show(seq[tick]);
     }, frameMs);
   } else {
-    pet.classList.remove('walking');
+    pet.classList.remove('walking', 'walk-seq');
   }
 }
 
@@ -616,6 +620,7 @@ function setRunFrame(on) {
   runTimer = null;
   if (on && rigOn) disableRig();
   if (!on) { pet.classList.remove('running', 'run-seq'); return; }
+  pet.classList.remove('walk-seq');
   const walkFrames = (F.walkSeq && F.walkSeq.frames && F.walkSeq.frames.length > 1) ? F.walkSeq.frames : F.walk;
   const { frames, frameMs, real } = RunMath.pickRunFrames(F.runSeq, walkFrames);
   pet.classList.add('running');
@@ -718,7 +723,7 @@ function playAction(name) {
   clearBehaviorTimers();
   mode = 'act';
   if (rigOn) { disableRig(); }   // 动作使用序列帧
-  pet.classList.remove('walking', 'running', 'run-seq', 'face-left', ...ACT_CLASSES, ...BEH_CLASSES, ...NAP_CLASSES);
+  pet.classList.remove('walking', 'running', 'run-seq', 'walk-seq', 'face-left', ...ACT_CLASSES, ...BEH_CLASSES, ...NAP_CLASSES);
   vibeEl.classList.remove('vibe-sleeping');
   clearProp();
   pet.classList.add('acting', 'act-' + name);
@@ -884,7 +889,7 @@ function playBehavior(name) {
   interruptOwnLife();
   mode = 'act';
   if (rigOn) disableRig();
-  pet.classList.remove('walking', 'running', 'run-seq', ...ACT_CLASSES, ...BEH_CLASSES, ...NAP_CLASSES);
+  pet.classList.remove('walking', 'running', 'run-seq', 'walk-seq', ...ACT_CLASSES, ...BEH_CLASSES, ...NAP_CLASSES);
   pet.classList.toggle('face-left', Math.random() < 0.5);
   clearProp();
   pet.classList.add('acting', 'beh-' + name);
@@ -996,7 +1001,7 @@ function startGroom(opts) {
   clearAttention();
   mode = 'act';
   if (rigOn) disableRig();
-  pet.classList.remove('walking', 'running', 'run-seq', 'face-left', ...ACT_CLASSES, ...BEH_CLASSES, ...NAP_CLASSES, ...WALK_CLASSES, ...TEASE_CLASSES);
+  pet.classList.remove('walking', 'running', 'run-seq', 'walk-seq', 'face-left', ...ACT_CLASSES, ...BEH_CLASSES, ...NAP_CLASSES, ...WALK_CLASSES, ...TEASE_CLASSES);
   vibeEl.classList.remove('vibe-sleeping');
   clearProp();
   pet.classList.add('acting', 'act-groom');
@@ -1156,7 +1161,7 @@ function startPounce(opts) {
   clearTease();
   mode = 'tease';
   if (rigOn) disableRig();
-  pet.classList.remove('walking', 'running', 'run-seq', 'acting', ...ACT_CLASSES, ...BEH_CLASSES, ...NAP_CLASSES);
+  pet.classList.remove('walking', 'running', 'run-seq', 'walk-seq', 'acting', ...ACT_CLASSES, ...BEH_CLASSES, ...NAP_CLASSES);
   pet.classList.toggle('face-left', o.dir < 0);
   if (F.idle.length) crossfadeTo(F.idle[0], 200);
   pet.classList.add('crouch');                            // 压低身子、屁股扭两下
@@ -1242,7 +1247,7 @@ function enterNap() {
   zoomiesLeft = 0;
   if (rigOn) disableRig();
   mode = 'nap';
-  pet.classList.remove('walking', 'running', 'run-seq', 'face-left', 'acting', ...ACT_CLASSES, ...BEH_CLASSES);
+  pet.classList.remove('walking', 'running', 'run-seq', 'walk-seq', 'face-left', 'acting', ...ACT_CLASSES, ...BEH_CLASSES);
   clearProp();
   pet.classList.add('vibe-sleeping');
   vibeEl.classList.add('vibe-sleeping');
