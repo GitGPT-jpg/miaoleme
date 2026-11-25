@@ -486,9 +486,21 @@ document.getElementById('vibe-mode').addEventListener('change', async (e) => {
   const s = await window.api.setVibe(e.target.checked);
   vibeOn = !!(s && s.vibe);
 });
+let senseOn = true;
+document.getElementById('sense-keys').addEventListener('change', async (e) => {
+  const s = await window.api.setSenseKeys(e.target.checked);
+  if (s) renderKeySource(s);
+});
+const KEY_SOURCE_TEXT = { uiohook: '当前：跨应用', 'cg-counter': '当前：跨应用', 'hid-idle': '当前：跨应用（按空闲时长估算）', 'app-only': '当前：只能感知应用内按键', off: '' };
+function renderKeySource(s) {
+  senseOn = s.senseKeys !== false;
+  document.getElementById('sense-keys').checked = senseOn;
+  const on = senseOn || !!s.vibe;
+  document.getElementById('key-source').textContent = on ? ' · ' + (KEY_SOURCE_TEXT[s.keySource] || '当前：启动中') : '';
+}
 // 没有全局输入源时，至少让在控制台里的敲击也能驱动桌宠（主进程会自行判断是否需要）
 document.addEventListener('keydown', (e) => {
-  if (vibeOn && !e.repeat) window.api.vibeKey();
+  if ((vibeOn || senseOn) && !e.repeat) window.api.vibeKey();
 });
 
 // PLACEHOLDER_POMO_GAMES
@@ -622,6 +634,7 @@ function renderAll(s) {
   document.getElementById('quiet-mode').checked = !!s.quiet;
   vibeOn = !!s.vibe;
   document.getElementById('vibe-mode').checked = vibeOn;
+  renderKeySource(s);
   document.getElementById('display-mode').value = s.displayMode === 'rig' ? 'rig' : 'photo';
   renderMeetings(s.meetings);
   renderDdls(s.ddls);

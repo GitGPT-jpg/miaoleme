@@ -44,3 +44,25 @@ test('frameIndices：循环播放且数量与总时长匹配', () => {
   assert.deepEqual(frameIndices(3000, 700, 3), [0, 1, 2, 0, 1]);
   assert.deepEqual(frameIndices(1000, 0, 4), [0]);
 });
+
+test('舔毛转耳帧：与原帧一一对应，缺任一变体整组不给', () => {
+  const full = buildBundledSequences((f) => 'data:' + f);
+  const g = full.actions.groom;
+  assert.equal(g.earFrames.length, g.frames.length);
+  g.frames.forEach((u, i) => assert.equal(g.earFrames[i], u.replace(/\.png$/, '-ear.png')));
+  const noEar = buildBundledSequences((f) => (f === 'act-groom-3-ear.png' ? null : 'data:' + f));
+  assert.equal(noEar.actions.groom.earFrames, undefined, '缺一张就不给，免得帧序错位');
+});
+
+test('内置转耳素材都在仓库里，并与原帧同尺寸', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { GROOM_FILES, earName } = require('../lib/sequences');
+  const size = (p) => { const b = fs.readFileSync(p); return [b.readUInt32BE(16), b.readUInt32BE(20)]; };
+  for (const f of [...GROOM_FILES, 'cat-3d-idle.png']) {
+    const a = path.join(__dirname, '..', 'assets', f);
+    const e = path.join(__dirname, '..', 'assets', earName(f));
+    assert.ok(fs.existsSync(e), earName(f));
+    assert.deepEqual(size(e), size(a), `${f} 尺寸一致`);
+  }
+});

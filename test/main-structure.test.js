@@ -282,3 +282,57 @@ test('渲染层：真帧序列下 CSS 不叠加缩放步态', () => {
   assert.match(css, /#pet\.form-custom\.running \.pet-shadow \{[^}]*shadowRun/, '保留影子节奏');
   assert.match(css, /#pet\.form-custom\.running\.face-left \.pet-photo-img \{ transform: scaleX\(-1\); \}/, '向左跑用 scaleX(-1)');
 });
+
+function petFnBody(pet, name) {
+  const start = pet.indexOf(`function ${name}(`);
+  assert.ok(start >= 0, `pet.js: function ${name} not found`);
+  const brace = pet.indexOf('{', start);
+  let depth = 0;
+  for (let i = brace; i < pet.length; i++) {
+    if (pet[i] === '{') depth++;
+    else if (pet[i] === '}' && --depth === 0) return pet.slice(brace, i + 1);
+  }
+  return '';
+}
+
+test('渲染层：键盘注意力只叠加耳/眼，首键不打断舔爪，停手后接着舔同一帧', () => {
+  const pet = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'pet.js'), 'utf-8');
+  const feed = petFnBody(pet, 'feedAttention');
+  assert.match(feed, /groomPaused = true/);
+  assert.match(feed, /hardCutTo\(ear\)/);
+  assert.doesNotMatch(feed, /bumpSession|setIdle|playAction/, '注意力不得接管全身');
+  const tick = petFnBody(pet, 'attTick');
+  assert.match(tick, /groomPaused = false/);
+  assert.match(tick, /groomIdx % g\.frames\.length/);
+  assert.match(petFnBody(pet, 'startGroom'), /if \(groomPaused\) return/);
+  // 按键在写代码开关判断之前喂给注意力：不开写代码模式也能感知
+  const vi = petFnBody(pet, 'onVibeInput');
+  assert.ok(vi.indexOf('feedAttention') >= 0 && vi.indexOf('feedAttention') < vi.indexOf('vibeOn'));
+});
+
+test('渲染层：拖拽/菜单/切换形象会作废注意力、巡视与逗猫', () => {
+  const pet = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'pet.js'), 'utf-8');
+  const life = petFnBody(pet, 'interruptOwnLife');
+  ['clearAttention', 'clearPatrol', 'clearTease'].forEach((f) => assert.match(life, new RegExp(f)));
+  ['beginDrag', 'applyForm', 'playAction', 'playBehavior', 'enterNap', 'setIdle'].forEach((f) =>
+    assert.match(petFnBody(pet, f), /interruptOwnLife\(\)/, `${f} 必须打断自主生活`));
+  // 巡视/逗猫的延时回调都校验 session，旧回调自动失效
+  assert.match(petFnBody(pet, 'patrolLater'), /session !== mySession/);
+  assert.match(petFnBody(pet, 'teaseLater'), /session !== mySession/);
+});
+
+test('渲染层：巡视先望后倾再迈步，近边减速并嗅，转身头→肩胯→尾', () => {
+  const pet = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'pet.js'), 'utf-8');
+  const sp = petFnBody(pet, 'startPatrol');
+  assert.ok(sp.indexOf('walk-look') < sp.indexOf('walk-lean') && sp.indexOf('walk-lean') < sp.indexOf('stepTo'));
+  assert.match(sp, /slowNear/);
+  const edge = petFnBody(pet, 'patrolAtEdge');
+  const order = ['sniff', 'turn-head', 'turn-body', 'turn-tail'].map((c) => edge.indexOf(c));
+  assert.ok(order.every((v, i) => v >= 0 && (i === 0 || v > order[i - 1])), `order=${order}`);
+});
+
+test('主进程：纸箭头只在番茄休息或启动安顿后归还', () => {
+  assert.match(SRC, /returnArrow\('startup'\)/);
+  assert.match(SRC, /returnArrow\('pomo-break'\)/);
+  assert.match(extractFunctionBody('returnArrow'), /shouldReturn/);
+});

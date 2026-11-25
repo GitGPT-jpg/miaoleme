@@ -40,6 +40,8 @@
         <img id="pet-photo-b" class="pet-photo-img pet-photo-b" alt="" />
         <canvas id="rig-canvas" class="rig-canvas" width="440" height="400"></canvas>
       </div>
+      <!-- 纸箭头：小猫自己的道具（扑中时藏起、日后推回来），不是系统光标 -->
+      <div class="pet-arrow hidden" aria-hidden="true"></div>
       <div class="pet-prop"></div>
       <div class="pet-face">🐱</div>
       <div class="pet-shadow"></div>
@@ -50,6 +52,7 @@
   <script src="../lib/run.js"></script>
   <script src="../lib/vibe.js"></script>
   <script src="../lib/behavior.js"></script>
+  <script src="../lib/attention.js"></script>
   <script src="pet.js"></script>
 </body>
 </html>

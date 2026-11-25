@@ -142,3 +142,5 @@ details summary { cursor: pointer; color: var(--brand); font-size: 13px; margin-
 .reaction-box { height: 90px; border-radius: 12px; background: #e85d5d; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 600; cursor: pointer; margin: 10px 0; user-select: none; }
 .reaction-box.ready { background: #2bb673; }
 .reaction-box.wait { background: #f0a500; }
+
+#key-source { font-style: normal; opacity: .65; font-size: 12px; }
