@@ -266,3 +266,189 @@ R2 → R3 修复：喂饭无待喂请求时不标记任何餐次且不加亲密�
 
 - macOS（Electron 45）：`dist/喵了么-0.6.4-arm64.dmg`、`dist/喵了么-0.6.4-arm64-mac.zip`
 - Windows x64（Electron 33，受 IM 100MB 上限）：`dist/喵了么-0.6.4-win.zip`、`download-page/miaoleme-win-x64-0.6.4.tar.xz`（免安装，SHA-256 见下载页）
+
+## 八、写代码氛围模式（v0.8）
+
+| 项 | 验证方式 | 结果 |
+|---|---|---|
+| 计量逻辑（KPM / 连击 / 档位 / 里程碑 / 粒子） | `test/vibe.test.js` | PASS |
+| 状态持久化（默认关闭，仅接受布尔） | `test/store.test.js`「vibe 写代码氛围模式」 | PASS |
+| IPC 单次注册、will-quit 清理顺序 | `test/main-structure.test.js` | PASS |
+| 渲染冒烟：`VIBE_DEMO=1` 启动 9 秒后读取桌宠窗口 DOM | Electron 45 本机运行 | PASS：`#vibe` 可见，档位 `vibe-fire`，KPM 468，连击 x8，在屏粒子 8 个，`#pet` 带 `vibing`/`vibe-bounce` |
+| 行为选择（权重、近期去重、打字/刚停/空闲三态阈值） | `test/behavior.test.js` | PASS |
+| 点击穿透 | `#vibe` 及子元素 `pointer-events: none`，不在 `overInteractive()` 命中范围内 | 代码检查 |
+
+明确未验证项：
+- `uiohook-napi` 全局钩子路径：未安装该可选依赖，NOT_RUN。
+- 打字时打盹、停手后自己玩：`VIBE_DEMO=1` 本机运行，肉眼观察切换；未做自动化截图比对。
+- 系统按键计数器路径的真人打字表现：只验证子进程能启动并输出增量，未做录屏对比。
+- `ioreg` 估算路径的真实手速表现：只验证了命令可用（单次约 23ms），未做真人打字录屏对比。
+- 参考视频（抖音「程序员八阿哥：写代码，必须要有氛围」）无法在本机抓取，效果按 Bongo Cat 类「桌宠陪敲代码」实现，细节可能与原视频不同。
+
+## 九、感知键盘、注意力、巡视回窝、逗猫（v0.9）
+
+验证环境：macOS arm64 本机，双屏（一块 Retina），Node 24，Electron 本地运行和 /Applications 安装版各一份。首次安装路径用全新 profile（`--user-data-dir=<临时目录>`，form=custom、photo、vibe=false）模拟。
+
+### 自动测试
+- `npm test`：172/172 通过。新增 attention（首键、连打聚合、停手 2.6s + 回看 0.5s 后回落）、arrow（藏起、只归还一次、重启恢复）、main-structure（IPC、开关、DEMO 钩子、拖拽打断）。
+
+### 行为回放（PET_PROBE 记录 #pet 的 class 变化）
+| 剧本 | 触发 | 回放结果 |
+| --- | --- | --- |
+| KEY_DEMO | 2s 舔爪，4.5s 单敲，7–10s 连敲 8 次 | 1.9s act-groom → 4.4s att-on（只换耳朵帧，爪停住）→ 7.2s att-look + att-flick → 12.6s att-linger → 13.1s att-down → 13.5s 从停住的那一帧接着舔 |
+| GROOM_DEMO | 2.5s 开始巡视 | walk-look → walk-lean → walking → walk-slow → sniff → turn-head → turn-body → turn-tail（翻面）→ walking → walk-slow → idle（回到窝）；之后自发 beh-yarn / beh-loaf，写实模式原地动作候选已恢复 |
+| TEASE_DEMO | 3s 来回逗 | crouch → pounce → paw-hold → act-groom → att-peek → act-groom → idle |
+
+三段静音实录由 PET_REC（每 100ms capturePage 桌宠窗口，按窗口坐标贴到浅底）生成，实际显示尺寸、无声音、无气泡：15s 敲键续舔、20s 散步回窝、30s 扑空洗脸偷看。
+
+### 已知问题复核
+1. 写实模式清空自主原地动作候选：已修，回放可见 beh-*。
+2. 骨骼模式绕过走跑序列：已修，走跑统一走序列帧。
+3. 切回序列后 Canvas 残影：disableRig 清画布。
+4. act-walk-3.png、act-stretch-1.png 棋盘格：已去底重存。
+
+### CPU（安装版，空闲不操作，所有 喵了么 进程合计）
+| 版本 / 配置 | 平均 CPU |
+| --- | --- |
+| v0.8，真实 profile | 29.5% |
+| v0.9，全新 profile（vibe 关） | 34.0%（60s） |
+| v0.9，真实 profile（vibe 开） | 52–58%（60s、120s 各一次） |
+
+v0.9 空闲时自己走动更多（150s 里 walk/run/patrol 约 31s），走路时每帧移动窗口，GPU 进程占大头。vibe 开时的增幅是回归，尚未定位修复；空闲唤醒次数比 v0.8 少，但两次 top 采样窗口不完全一致，只作参考。
+
+### 待测（需要在 Mac 上由真人完成）
+- 跨应用首键到首个可见微动的 P95（聊天、文档、浏览器、表格各 25 组，目标 ≤150ms）。
+- 点击穿透和焦点不被抢走。
+- 中文输入法、方向键、修饰键、长按、权限撤销与恢复、休眠唤醒。
+- 半小时空闲和连续输入的 CPU、唤醒次数，与同机 v0.8 对比。
+- 桌面实际手感。
+
+最短复验步骤：
+1. 安装 0.9.0，首次打开时在「系统设置 → 隐私与安全性」授予输入监控或辅助功能。
+2. 面板打开「感知键盘」，确认状态显示为系统级（否则显示「只能感知应用内按键」）。
+3. 在微信、文稿、浏览器、表格里各按一下 Tab 或方向键，看耳朵是否转；敲一串看是否抬眼；停手 3s 看是否低头接着舔。
+4. 活动监视器看 喵了么 全部进程 30 分钟的 CPU 和唤醒次数。
+
+## 十、v0.9.1：更爱跑来跑去
+
+改动：散步不再只绕窝 ±90px，改为每段走 140–440px，一次散步 1–3 段，中间停下嗅一嗅或张望；离窝超过 420px 时往回走。walk/run/zoomies 权重提高，巡视概率从 35% 提到 50%，冲刺距离 220–520px，疯跑连冲 2–3 趟，空闲等待缩短到 1.8–5s。用户打字时仍保持安静。
+
+回放（macOS arm64，fresh profile，vibe 关，约 123s 探针）：walk 20.2s、run 20.7s、patrol 4.8s、act 35.1s、idle 42.1s。移动类占比约 37%，v0.9.0 同口径约 21%。走动越多 CPU 越高，待在同机复测空闲 CPU。
+
+## 十一、v0.9.2：四条腿跑起来
+
+问题：自定义照片猫跑动时只是一张静态图在平移。原因是重做跑步序列时 `startGenJob` 先清空 `customGenRunSeq`，生成中途失败或被打断后，已经写到磁盘的 8 帧步态没有记回 store；走路也一直用单张图加 CSS 晃动。
+
+改动：
+- `lib/recover.js`：启动时扫描用户目录里的 `pet-gen-*` 孤儿帧，只认当前形象（不早于 idle 帧时间戳）的最新一组，补回 8 帧奔跑序列和缺失的动作帧（本机找回了 run×8 和 stretch）。
+- `startGenJob`：重做跑步前留底，新序列不满 8 帧时还原旧序列。
+- 走路复用 8 帧四腿步态，每帧 125 ms、硬切（`walk-seq`），比奔跑慢一半；朝左时镜像。
+- `lib/frameNorm.js`：无透明底的动作帧（四角都是浅中性色）从四边泛洪抠掉背景，保留猫身内部的白毛；新生成帧和存量帧都处理。
+
+验证（macOS arm64，用户 profile 副本，`--user-data-dir` 隔离）：
+- 启动后 store 副本 `customGenRunSeq` 为 8 帧，动作新增 stretch；groom 帧由 RGB 变为 RGBA。
+- `PET_PROBE` + `RUN_DEMO=1`：奔跑期间渲染层依次切过 8 张不同帧；走路状态带 `walk-seq` 类，帧同样轮换。
+- `npm test`：179 项全部通过（新增 `test/recover.test.js` 及启动顺序结构测试）。
+
+待补：其余动作（转身、起身、落爪等）的多帧序列仍需配置可用的图像生成服务后重新生成。
+
+## 十二、v0.10.0：真帧动作
+
+以 assets/cat-3d-idle.png 为母版补画 21 张动作帧（360×280 画布，脚底对齐同一基线），替换原来用 CSS 形变和表情符号拼出的动作。
+
+- 小生活：loaf、yawn、knead、scratch、look、tail、butterfly、yarn、pounce、stretch 由 `BEHAVIOR_FILES` 描述，播放时只保留轻微呼吸，不再叠加缩放旋转。任意一帧缺失时整条行为回落到旧的单帧表现。
+- 巡视：alert（起身竖耳）→ 四腿走 → sniff（屏幕边嗅）→ turnBack（头先回）→ turnFront（肩胯跟上）→ 镜像 → 走回 → sitDown（坐回窝）。
+- 逗猫：crouch → pounce → 扑空 pawUp 后洗脸；扑中 land 后叼走纸箭头。
+- 用户上传的猫没有这些帧，`behaviorSeq`、`poses` 为空，行为保持原样。
+
+### 本机回放（CDP 采样可见帧，开发版）
+
+- knead：knead0 ↔ knead1 循环，结束回 idle。
+- loaf：loaf0 → loaf1 → loaf2 停住，结束前回 loaf0 再回 idle。
+- 巡视：alert → walk 0–3 循环 → sniff → turnBack → turnFront → 镜像 turnBack → 反向走 → sitDown → idle。
+- 逗猫：crouch → pounce → pawUp → 洗脸。
+
+待测：真人在实际显示尺寸下目视确认 land 帧朝向和 turn-2 正面帧的衔接是否自然。
+
+## 十三、v0.11.0：更像真猫的小习惯
+
+新增 16 张真帧（同一母版、360×280 画布、脚底同一基线）：blink、blink-half、shake ×2、earscratch ×2、belly ×2、curl、side-sleep、startle、content、chatter、rub、sit-lick、tail-wrap。
+
+- 眨眼：只在站立待机帧上眨；普通眨眼 120 ms，15% 连眨两下，20% 慢眨（半闭 → 闭 → 半闭 → 睁，约 1.2 s）。窗口隐藏时不眨。
+- 抚摸：鼠标在猫身上不按键来回移动累计超过 340 px 进入 `pet` 模式，content 帧加 purring 微震；约 2.4 s 后蹭手（rub）；停摸后回 idle。抚摸期间不响应键盘注意力。
+- 受惊：拖拽松手时速度 > 2.2 px/ms，或短时间连点，播放 startle 帧加上跳，再抖毛。普通拖放 30% 概率抖毛。
+- 小生活新增 shake、earscratch、belly、chatter、sitlick、tailwrap；`circadianWeights` 按钟点调整权重（深夜偏睡、傍晚偏玩）。
+- 打盹随机选 curl、sideSleep 或 sleep，睡眠期间每轮 8% 概率换姿势。
+- 拖拽、菜单、喂养、切换形象都经 `interruptOwnLife` 清掉眨眼、抚摸和 life 类。
+
+### 本机回放（macOS，开发版 Electron，CDP 每 25 ms 采样可见帧）
+
+- 慢眨：idle0 → blinkHalf → blink → blinkHalf → idle0。
+- shake、earscratch、belly、chatter（与 alert 交替）、sitlick（sitDown 过渡）、tailwrap 均逐帧播放并回到 idle。
+- 抚摸：合成 13 次 mousemove 后进入 pet + purring；content → rub → content → idle。
+- 受惊：startle + 跳 → shake 循环 → idle。
+- 打盹三次：分别出现 curl、sleep、sideSleep 之一。
+- npm test：183 项全部通过。控制台无脚本错误。
+
+注意：窗口在后台被 Chromium 节流时计时器会延迟，CDP 回放需加 `--disable-renderer-backgrounding --disable-background-timer-throttling`。待测：真人在实际尺寸下目视确认 rub、belly 帧与待机帧的衔接。
+
+## 十四、v0.12.0：动作有来由，过渡更顺
+
+新增 12 张过渡帧，使用同一母版、同一画布和脚底基线：settle ×3、wake-1、rise ×2、yawn-0、stretch-0、walk-5（起步）、walk-6（收步）、groom-0（抬爪）、look-0。
+
+- 内在状态：`drives` 包含 energy 和 sleepiness，按活动类型（active / calm / rest / sleep）随时间涨落。
+- 意向性选择：`pickIntentional` 综合上一行为的转移表、驱动值和钟点权重。醒来 4 分钟内 catnap 权重为 0；困意超过 0.85 且已过冷却期时直接去睡。停留时长 `dwellMs` 随活动类型和困意变化。
+- 入睡：sit-down → settle-1/2/3，每帧 900 ms，再淡入睡姿。自己困了去睡（long）时按 `napDurationMs` 睡够才醒，用户停手不会把它叫醒。
+- 醒来：wake-1 → rise-1 → rise-2，每帧 800 ms，接着打哈欠或伸懒腰，然后才去做别的。
+- 起步先显示 stepOut 160 ms 再进入走路循环；停步先显示 stepIn 再站稳。原地动作不再随机翻转朝向。
+- 所有过渡帧定时器都受 session 和 mode 保护，拖拽可以打断，不会留下残帧。
+
+### 本机回放（macOS，开发版 Electron，CDP 采样可见帧）
+
+- 入睡：前 4 s 处于 settle（beh-seq），之后才加 vibe-sleeping 进入睡姿。
+- 醒来：rise 三帧约 2.4 s → yawn → idle → walk。
+- settle 中途拖拽：mode=drag，过渡定时器清零，只剩 1 张可见帧。
+- 冷却：sleepiness 0.95、醒来 1 分钟时，500 次抽样中 catnap 出现 0 次；醒来 10 分钟时出现 500 次。
+- 散步：idle → stepOut → walk 循环；停步时 stepIn → idle。
+- npm test：190 项全部通过。
+
+待测：需要真人在实际尺寸下目视确认 settle、rise 与待机帧的衔接，以及半小时空闲时入睡和醒来的节奏。
+
+## 十五、v0.13.0：百帧补画与慢节奏意向链
+
+新增 100 张中间帧，同一母版、画布和脚底基线，注册为 35 条行为链（`lib/sequences.js` 的 `behaviorSeq`）和 `napBreath` 呼吸睡姿。
+
+- 节奏：链帧 frameMs 多在 520–2600 ms，fadeMs 不超过 frameMs；待机呼吸放慢。坐姿行为先播 sitdown 链，做完播 standup 链。
+- 因果转移：`TRANSITIONS` 中 look → sneak ×3、sneak → hunt ×4、hunt → facewash ×4、walk → sniff ×3、catnap → yawn/stretch ×4。`dwellMs` 整体拉长。
+- 奔跑收尾：zoomies 结束时播 brake 链，再淡回待机。
+- 散步：中途停下时 40% 嗅闻链、其余眨眼链；到边先播 sniff 链，再 turn-head → turn-body → turn 链 → 翻转朝向 → turn-tail，回窝播 sitdown 与 tailwrap 链。
+- 逗猫：hunt 链伏低 → leap 链腾空 → 扑空时 pawHold 悬爪 700 ms → 洗脸 → 偷看。
+- 小睡：70% 用 sl01/sl03 呼吸交替（3 s 一换，1.8 s 淡化），每次 6% 概率插入抖耳、捂眼或梦中蹬腿；醒来先淡到 oneEye，1.5 s 后播 rise 链。
+
+### 本机回放（macOS，开发版 Electron，CDP 每秒采样）
+
+- 载入：behaviorSeq 35 条，walkSeq 与 runSeq 各 8 帧，napBreath 存在。
+- 散步：walk-lean → walking → walk-slow（近边）→ patrol 嗅闻 4 s → turn-head → turn-body → face-left turn-tail walking → 回窝 posed 约 5 s → idle。
+- 逗猫：crouch → paw-hold → act-groom（洗脸）。
+- 入睡 → vibe-sleeping；唤醒 → beh-seq（rise）→ beh-yawn。
+- 整轮控制台异常 0 条；npm test 193 项全部通过。
+
+待测：需要真人在实际尺寸下目视确认 turn 链与翻转后 w01 的朝向衔接，以及半小时空闲时的节奏是否「够慢」。
+
+## 十六、主页的猫：听见了但手里的事还没做完 / 能骗过它
+
+入口 `landing/index.html`。行为全部在 `landing/cat-brain.js` 的纯状态机里（`test/landing.test.js` 9 项）；`cat.js` 只负责事件、帧切换和 rAF。猫记住三件事：当前动作（act/seq）、最后注意到的位置（lastSeen）、剩余兴致（interest 0–3，20 s 回 1）。
+
+- 静止：去掉首屏整图漂浮；接触阴影与支撑爪固定，只有胸腹 scale 起伏。39 张同母版姿势帧（透明 webp），按 280×220 显示尺寸比对，单耳转动帧与洗脸帧差异约 2000–3000 像素，抬眼、偷瞄约 1900–2300 像素，肉眼可见。
+- 键盘：`keydown` 被动捕获，只计时间戳，不读 key/code、不 preventDefault。单键 480 ms 转耳；1 s 内 ≥3 键抬眼；停手 1.3 s + 半拍 0.55 s 后垂眼回到原来那一帧的下一帧。习惯值随按键增长、9 s 衰减，超过 0.7 只转耳继续洗。
+- 光标：进入目送范围算一次来访；9 s 内第二次来访且靠近爪边才伏低（重心后移帧）。离开 1.5 倍范围算消失：盯最后位置 1.1 s → 探头找 1.5 s → 回去洗脸，兴致 -1。爪边晃 0.9 s 扑：swipe → hover 悬爪 → 抹脸 → 偷瞄 → 洗完。兴致 0 时只给 bored。
+- 触摸：touchstart 记起点；竖向位移 >10 且 >1.5 倍横向判为滚动，不处理；其余位移 >6 px 调用 touch，以起点判断左右脸颊。
+
+### 本机回放（macOS，headless Chromium + CDP 录屏，触摸为模拟）
+
+- 场景 1（760×560，约 14 s）：单键 → wash-4-ear；连打 → wash-look；停手约 1.85 s 后 → wash-2（同一侧继续）。Tab 把焦点移到第二个输入框，两个输入框内容分别为键入的文字，按键原功能正常。
+- 场景 2（约 42 s）：首次路过 watch-l/r；绕回 crouch-r；光标移出 → 盯着 → search → wash（兴致 3→2）；再次靠近停留 → swipe → hover → wash-2/3 → wash-peek → wash-4（兴致 1）；再扑一次兴致 0，之后靠近只给 bored。
+- 场景 3（390×720，dpr 2，触摸模拟）：横划右颊 rub-r、左颊 rub-l，蹭完回到洗脸；从猫身上竖滑，帧保持 wash，scrollY 86 → 406。
+- 三段均无控制台错误；气泡与调试标记关闭（`?rec=1`）。npm test 202 项全部通过。
+
+待测：真机手机的触摸手感与滚动惯性；不同浏览器下首键到转耳的实际延迟；真人在主页尺寸下目视确认“听见了”“以为光标还在”“不想玩了”三种读感。

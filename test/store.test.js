@@ -212,3 +212,9 @@ test('未知字段有上限：数量、体积、不可序列化值', () => {
   assert.equal('fn' in normalizeState({ fn: () => 1 }), false, '函数不可序列化，跳过');
   assert.equal(normalizeState({ customGenRunSeq: ['/a.png'] }).customGenRunSeq.length, 1, '已知字段不受影响');
 });
+
+test('vibe 写代码氛围模式：默认关闭，仅接受布尔', () => {
+  assert.equal(normalizeState({}).vibe, false);
+  assert.equal(normalizeState({ vibe: true }).vibe, true);
+  assert.equal(normalizeState({ vibe: 'yes' }).vibe, false);
+});

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, Notification, screen, nativeImage, globalShortcut, dialog } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, Notification, screen, nativeImage, globalShortcut, dialog, powerMonitor } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -42,8 +42,10 @@ const { createGenJob } = require('./lib/genjob');
 const { clampToArea, isInsideAnyDisplay } = require('./lib/geometry');
 const { restorePomodoro, pomoSnapshot } = require('./lib/pomodoro');
 const { buildBundledSequences, ACTION_META, WALK } = require('./lib/sequences');
+const arrowDomain = require('./lib/arrow');
 const { RIG_PARTS: RIG_PLAN, rigFilePath, coreRigPresent, optionalRigPresent } = require('./lib/rig');
-const { alphaBBox, alphaStats, heightScale, seqCanvas, seqPlacements } = require('./lib/frameNorm');
+const { alphaBBox, alphaStats, heightScale, seqCanvas, seqPlacements, needsKeying, keyOutBackground } = require('./lib/frameNorm');
+const { pickOrphanFrames, planRecovery, frameTs, shouldRestoreRunSeq } = require('./lib/recover');
 const { RUN_FRAMES, RUN_FRAME_MS, orderRunCycle } = require('./lib/run');
 // 提示词只有一份（lib/prompts.js），tools/gen-frames.js 共用，避免两边漂移
 const {
@@ -168,6 +170,14 @@ function customRunSeq() {
   return frames.length >= 4 ? { frames, frameMs: RUN_FRAME_MS } : null;
 }
 
+// 自定义猫的走路：有 8 帧步态时直接用这组四腿交替帧放慢播放（单张走路图平移看着像在滑），
+// 帧是横向画布，wide 让渲染层按跑步帧的展示框排版；硬切（fadeMs 0），淡化会把腿糊成重影
+const CUSTOM_WALK_FRAME_MS = 125;
+function customWalkSeq(runSeq) {
+  if (!runSeq || !runSeq.frames || runSeq.frames.length < 4) return null;
+  return { frames: runSeq.frames, frameMs: CUSTOM_WALK_FRAME_MS, fadeMs: 0, wide: true };
+}
+
 // 返回帧集合：{ idle, idleAlt, walk, walkAlt, happy, actions:{..., sleepAlt} }
 // 内置 3D 猫返回多帧组（呼吸/迈步/睡姿成对，供丝滑循环）；用户自定义图返回单帧（成对帧退化为同一张）
 function customFrames() {
@@ -181,11 +191,12 @@ function customFrames() {
         if (p && fs.existsSync(p)) { const u = fileToDataUrl(p); if (u) actions[k] = u; }
       });
     }
-    return { idle, idleAlt: idle, walk, walkAlt: walk, happy: idle, actions, meta: ACTION_META, sequences: {}, walkSeq: null, runSeq: customRunSeq(), generated: true };
+    const runSeq = customRunSeq();
+    return { idle, idleAlt: idle, walk, walkAlt: walk, happy: idle, actions, meta: ACTION_META, sequences: {}, walkSeq: customWalkSeq(runSeq), runSeq, behaviorSeq: {}, poses: {}, generated: true };
   }
   if (state.customImage && fs.existsSync(state.customImage)) {
     const u = fileToDataUrl(state.customImage);
-    return { idle: u, idleAlt: u, walk: u, walkAlt: u, happy: u, actions: {}, meta: ACTION_META, sequences: {}, walkSeq: null, runSeq: null, generated: false };
+    return { idle: u, idleAlt: u, walk: u, walkAlt: u, happy: u, actions: {}, meta: ACTION_META, sequences: {}, walkSeq: null, runSeq: null, behaviorSeq: {}, poses: {}, generated: false };
   }
   const actions = {};
   Object.keys(BUNDLED_ACTIONS).forEach((k) => {
@@ -201,10 +212,14 @@ function customFrames() {
     walk,
     walkAlt: fileToDataUrl(BUNDLED_WALK2) || walk,
     happy: fileToDataUrl(BUNDLED_HAPPY) || idle,
+    idleEar: fileToDataUrl(path.join(__dirname, 'assets', 'cat-3d-idle-ear.png')) || null,
     actions,
     meta: ACTION_META,
     sequences: seq.actions,
     walkSeq: seq.walk,
+    behaviorSeq: seq.behaviors, // 小生活行为的真帧序列
+    poses: seq.poses,           // 巡视/逗猫的单帧姿态
+    napBreath: seq.napBreath,   // 睡姿呼吸两帧
     runSeq: seq.run,         // 内置猫的 8 帧跑步序列；素材不全时为 null，渲染层用走路帧兜底
     generated: true          // 内置猫是 3D 素材，不是用户原图：别套 raw-photo 的白边卡片样式
   };
@@ -354,6 +369,7 @@ async function genAvatarFrame(srcPath, poseName, prompt, refs) {
         return { ok: false, error: 'quality_' + (q.reason || 'rejected') };
       }
       if (poseName === 'idle' && q.bbox) poseRefBox = { w: q.bbox.w, h: q.bbox.h };
+      keyFrameIfOpaque(outPath);
       if (!isRun) normalizePoseFrame(outPath);
     }
     return { ok: true, path: outPath };
@@ -415,6 +431,22 @@ function checkFrameQuality(file, ref) {
   } catch (e) {
     return { ok: false, reason: 'unreadable' };
   }
+}
+
+// 不带透明通道的浅色底帧：从边缘泛洪抠掉背景，返回是否改写了文件
+function keyFrameIfOpaque(file) {
+  if (!/\.png$/i.test(String(file || ""))) return false;
+  try {
+    const img = nativeImage.createFromPath(file);
+    if (img.isEmpty()) return false;
+    const { width, height } = img.getSize();
+    const bmp = Buffer.from(img.getBitmap());
+    if (!needsKeying(bmp, width, height)) return false;
+    if (keyOutBackground(bmp, width, height) < width * height * 0.05) return false;
+    const out = nativeImage.createFromBitmap(bmp, { width, height });
+    fs.writeFileSync(file, out.toPNG());
+    return true;
+  } catch (e) { return false; }
 }
 
 // 姿势帧归一化：裁剪透明边、统一高度，减少序列播放时的忽大忽小
@@ -678,8 +710,11 @@ function startGenJob(sourcePath, sourceId, only, refs) {
   poseRefBox = null;
   genRunner = runner;
   genJob = runner.job;
-  // 整组重做奔跑序列前清空旧槽位：regenerate 期间先退回走路帧，也避免新旧比例混播
-  if (tasks.some((t) => runIndexOfKey(t.key) >= 0) && (state.customGenRunSeq || []).some(Boolean)) {
+  // 整组重做奔跑序列前清空旧槽位：regenerate 期间先退回走路帧，也避免新旧比例混播。
+  // 旧序列先留底：新的一组没有 8 帧全部成功（失败/取消/中断）时要还原，否则猫从此只剩一张图平移
+  const prevRunSeq = (state.customGenRunSeq || []).slice();
+  const redoRun = tasks.some((t) => runIndexOfKey(t.key) >= 0);
+  if (redoRun && prevRunSeq.some(Boolean)) {
     state.customGenRunSeq = [];
     saveState();
     broadcastCustomImage();
@@ -690,6 +725,12 @@ function startGenJob(sourcePath, sourceId, only, refs) {
 
   runner.run().then((snap) => {
     if (genJob !== runner.job) return;
+    if (redoRun && shouldRestoreRunSeq(state.customGenRunSeq, prevRunSeq, (f) => fs.existsSync(f))) {
+      state.customGenRunSeq = prevRunSeq;
+      saveState();
+      dataUrlCache.clear();
+      broadcastCustomImage();
+    }
     // 跑步序列整组归一化后再刷新渲染层，避免帧间忽大忽小
     if (normalizeRunSequence() > 0) { dataUrlCache.clear(); broadcastCustomImage(); }
     if (coreRigPresent(app.getPath('userData'), (f) => fs.existsSync(f))) {
@@ -890,6 +931,18 @@ function refreshTrayMenu() {
         if (panelWin) panelWin.webContents.send('state-updated', publicState());
       }
     },
+    {
+      label: '⌨️ 写代码氛围模式',
+      type: 'checkbox',
+      checked: !!state.vibe,
+      click: () => setVibe(!state.vibe)
+    },
+    {
+      label: state.senseKeys === false ? '👂 感知键盘' : `👂 感知键盘（${KEY_SOURCE_LABEL[vibe.keySource] || '启动中'}）`,
+      type: 'checkbox',
+      checked: state.senseKeys !== false,
+      click: () => setSenseKeys(state.senseKeys === false)
+    },
     { type: 'separator' },
     { label: '退出', click: () => { app.isQuitting = true; app.quit(); } }
   ]);
@@ -1048,6 +1101,7 @@ function startPomodoro() {
         persistPomo();
         notify('🍅 专注完成', `休息 ${state.pomodoro.breakMin} 分钟吧~`);
         petSay('专注完成！休息一下~', 'happy');
+        setTimeout(() => returnArrow('pomo-break'), 2500);
       } else {
         notify('🍅 休息结束', '可以开始下一个番茄了！');
         petSay('休息结束，继续加油？', 'normal');
@@ -1081,6 +1135,7 @@ function restorePomodoroOnStartup() {
           persistPomo();
           notify('🍅 专注完成', `休息 ${state.pomodoro.breakMin} 分钟吧~`);
           petSay('专注完成！休息一下~', 'happy');
+          setTimeout(() => returnArrow('pomo-break'), 2500);
         } else {
           notify('🍅 休息结束', '可以开始下一个番茄了！');
           petSay('休息结束，继续加油？', 'normal');
@@ -1154,6 +1209,9 @@ function publicState() {
     displayMode: state.displayMode,
     autoLaunch: state.autoLaunch,
     quiet: state.quiet,
+    vibe: !!state.vibe,
+    senseKeys: state.senseKeys !== false,
+    keySource: vibe.keySource,
     stats: state.stats,
     mealMenus: state.mealMenus,
     games: state.games,
@@ -1652,6 +1710,45 @@ handle('set-quiet', (e, enabled) => {
   return publicState();
 });
 
+// 写代码氛围模式
+handle('set-vibe', (e, enabled) => {
+  setVibe(enabled);
+  return publicState();
+});
+// 没有全局输入源时（如 Windows/Linux 未装 uiohook）：控制台内的按键也算敲击（只传“发生了”，不传键值）
+// 有跨应用来源时不再重复计数；只有估算/无来源时才补上控制台内按键
+on('vibe-key', () => {
+  if (!keysWanted()) return;
+  if (vibe.keySource === 'app-only' || vibe.keySource === 'hid-idle' || vibe.keySource === 'off') sendVibe('key');
+});
+
+// 感知键盘：只统计按键次数和节奏（不采集字符/键码/窗口），让小猫转耳、抬眼
+function setSenseKeys(enabled) {
+  state.senseKeys = !!enabled;
+  saveState();
+  if (keysWanted()) startVibeSources(); else stopVibeSources();
+  if (petWin && !petWin.isDestroyed()) petWin.webContents.send('sense-keys', state.senseKeys);
+  if (tray) refreshTrayMenu();
+  if (panelWin && !panelWin.isDestroyed()) panelWin.webContents.send('state-updated', publicState());
+}
+handle('set-sense-keys', (e, enabled) => { setSenseKeys(enabled); return publicState(); });
+
+// 纸箭头：扑中藏起，番茄休息开始或下次启动时归还一次
+function returnArrow(reason) {
+  if (!arrowDomain.shouldReturn(state.paperArrow, reason)) return false;
+  if (!petWin || petWin.isDestroyed()) return false;
+  petWin.webContents.send('arrow-return', { reason });
+  return true;
+}
+on('arrow-caught', () => {
+  state.paperArrow = arrowDomain.markCaught(state.paperArrow, Date.now());
+  saveState();
+});
+on('arrow-returned', () => {
+  state.paperArrow = arrowDomain.markReturned(state.paperArrow);
+  saveState();
+});
+
 // 桌宠点击穿透控制：鼠标在宠物上时可交互，否则穿透
 on('set-ignore-mouse', (e, ignore) => {
   if (petWin) petWin.setIgnoreMouseEvents(ignore, { forward: true });
@@ -1724,10 +1821,231 @@ function startDemoSequence() {
 
 handle('demo-start', () => { startDemoSequence(); return { ok: true }; });
 
+// ---------- 写代码氛围模式：全局输入活动 ----------
+// 隐私：只向桌宠转发 { kind, t }（key/click/mouse），绝不读取或传递键值内容。
+// 来源优先级：可选依赖 uiohook-napi（全平台，需辅助功能权限）→ macOS ioreg 空闲时间轮询 → 仅鼠标 + 控制台内按键。
+const vibe = { hook: null, keyProc: null, pollTimer: null, polling: false, demoTimer: null, lastCursor: null, cursorMovedAt: 0, lastMouseSent: 0, keySource: 'off' };
+const VIBE_POLL_MS = 250;
+const KEY_SOURCE_LABEL = { uiohook: '跨应用', 'cg-counter': '跨应用', 'hid-idle': '跨应用·估算', 'app-only': '仅应用内', off: '已关闭' };
+
+// 「感知键盘」与氛围模式共用同一组输入源：任一开着就需要按键节奏
+function keysWanted() { return state.senseKeys !== false || !!state.vibe; }
+
+// 当前能感知到的按键范围：uiohook / cg-counter 为跨应用；hid-idle 是估算；app-only 只有控制台内按键
+function setKeySource(src) {
+  if (vibe.keySource === src) return;
+  vibe.keySource = src;
+  if (tray) refreshTrayMenu();
+  if (petWin && !petWin.isDestroyed()) petWin.webContents.send('key-source', src);
+  if (panelWin && !panelWin.isDestroyed()) panelWin.webContents.send('state-updated', publicState());
+}
+
+function sendVibe(kind, n) {
+  if (!petWin || petWin.isDestroyed()) return;
+  const msg = { kind, t: Date.now() };
+  if (n > 1) msg.n = Math.min(50, n | 0);
+  petWin.webContents.send('vibe-input', msg);
+}
+
+function startVibeHook() {
+  let mod;
+  try { mod = require('uiohook-napi'); } catch (e) { return false; }
+  try {
+    const hook = mod.uIOhook;
+    hook.on('keydown', () => sendVibe('key'));
+    hook.on('mousedown', () => sendVibe('click'));
+    hook.start();
+    vibe.hook = hook;
+    return true;
+  } catch (e) {
+    console.log('[vibe] uiohook unavailable:', e && e.message);
+    return false;
+  }
+}
+
+// macOS 无需原生模块：HIDIdleTime 是距最近一次键鼠事件的纳秒数。
+// 一个轮询周期内有输入、而光标没动 → 视为在敲键盘（估算值，每周期最多记一次）。
+function pollHidIdle() {
+  if (vibe.polling) return;
+  vibe.polling = true;
+  let out = '';
+  let child;
+  try {
+    child = spawn('ioreg', ['-c', 'IOHIDSystem', '-r', '-k', 'HIDIdleTime', '-d', '1']);
+  } catch (e) { vibe.polling = false; return; }
+  child.stdout.on('data', (d) => { out += d; });
+  child.on('error', () => { vibe.polling = false; });
+  child.on('close', () => {
+    vibe.polling = false;
+    if (!keysWanted()) return;
+    const m = out.match(/"HIDIdleTime"\s*=\s*(\d+)/);
+    if (!m) return;
+    const idleMs = Number(m[1]) / 1e6;
+    if (idleMs < VIBE_POLL_MS && Date.now() - vibe.cursorMovedAt > VIBE_POLL_MS) sendVibe('key');
+  });
+}
+
+// macOS 实时按键计数：CGEventSourceCounterForEventType 只返回 keyDown 的累计次数（不含键值），
+// 每 50ms 输出一次增量，桌宠就能做到“敲一下飘一个符号”。子进程异常退出时回退到 ioreg 轮询。
+const VIBE_KEY_SCRIPT = [
+  "ObjC.import('CoreGraphics'); ObjC.import('Foundation');",
+  'var out = $.NSFileHandle.fileHandleWithStandardOutput;',
+  'var last = $.CGEventSourceCounterForEventType(1, 10);',
+  'var lastF = $.CGEventSourceCounterForEventType(1, 12);',
+  'var half = 0;',
+  "out.writeData($('ready\\n').dataUsingEncoding($.NSUTF8StringEncoding));",
+  'while (true) {',
+  '  delay(0.05);',
+  '  var c = $.CGEventSourceCounterForEventType(1, 10);',
+  '  var f = $.CGEventSourceCounterForEventType(1, 12);',
+  // 修饰键按下/抬起各算一次 flagsChanged：按下那一下就计 1（首键立即反馈），抬起不计
+  '  var before = Math.floor((half + 1) / 2);',
+  '  half += Math.max(0, f - lastF);',
+  '  var n = Math.max(0, c - last) + (Math.floor((half + 1) / 2) - before);',
+  "  if (n > 0) out.writeData($('k' + n + '\\n').dataUsingEncoding($.NSUTF8StringEncoding));",
+  '  last = c; lastF = f;',
+  '}'
+].join('\n');
+
+function startVibeKeyCounter() {
+  let child;
+  try {
+    child = spawn('osascript', ['-l', 'JavaScript', '-e', VIBE_KEY_SCRIPT], { stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch (e) { return false; }
+  vibe.keyProc = child;
+  let buf = '';
+  child.stdout.on('data', (d) => {
+    buf += d;
+    const lines = buf.split('\n');
+    buf = lines.pop();
+    for (const line of lines) {
+      const t = line.trim();
+      if (t === 'ready') { if (vibe.keyProc === child) setKeySource('cg-counter'); continue; }
+      const m = /^k(\d+)/.exec(t);
+      if (!m) continue;
+      // 一个 50ms 批次只发一条消息（带次数），首键即刻送达，渲染层再按节奏聚合
+      sendVibe('key', Number(m[1]));
+    }
+  });
+  const fallback = () => {
+    if (vibe.keyProc !== child) return;
+    vibe.keyProc = null;
+    if (keysWanted() && !vibe.hook && !vibe.pollTimer) {
+      vibe.pollTimer = setInterval(pollHidIdle, VIBE_POLL_MS);
+      setKeySource('hid-idle');
+    }
+  };
+  child.on('error', fallback);
+  child.on('exit', fallback);
+  return true;
+}
+
+function startVibeSources() {
+  if (vibe.hook || vibe.pollTimer || vibe.keyProc) return;
+  if (startVibeHook()) { setKeySource('uiohook'); return; }
+  if (process.platform !== 'darwin') { setKeySource('app-only'); return; }
+  if (startVibeKeyCounter()) return;   // 子进程报 ready 后才标记为 cg-counter
+  vibe.pollTimer = setInterval(pollHidIdle, VIBE_POLL_MS);
+  setKeySource('hid-idle');
+}
+
+// 休眠唤醒 / 解锁后计数器子进程可能已失效：整体重启输入源
+function restartVibeSources() {
+  stopVibeSources();
+  if (keysWanted()) startVibeSources();
+}
+
+function stopVibeSources() {
+  if (vibe.hook) {
+    try { vibe.hook.removeAllListeners(); vibe.hook.stop(); } catch (e) { /* ignore */ }
+    vibe.hook = null;
+  }
+  if (vibe.keyProc) {
+    const p = vibe.keyProc;
+    vibe.keyProc = null;
+    try { p.kill(); } catch (e) { /* ignore */ }
+  }
+  if (vibe.pollTimer) { clearInterval(vibe.pollTimer); vibe.pollTimer = null; }
+  setKeySource('off');
+}
+
+// 光标移动也算“氛围能量”（不计入连击/KPM），由 cursorTimer 调用
+function trackVibeCursor(c) {
+  const last = vibe.lastCursor;
+  vibe.lastCursor = { x: c.x, y: c.y };
+  if (!last || !keysWanted()) return;
+  if (Math.abs(c.x - last.x) + Math.abs(c.y - last.y) < 4) return;
+  const now = Date.now();
+  vibe.cursorMovedAt = now;
+  if (state.vibe && !vibe.hook && now - vibe.lastMouseSent >= 200) { vibe.lastMouseSent = now; sendVibe('mouse'); }
+}
+
+// 自测钩子：VIBE_DEMO=1 打开氛围模式，模拟“敲 3–6 秒、停 9–14 秒”的真实节奏，
+// 能同时看到打字时睡在键盘边、停下后自己玩。
+function startVibeDemo() {
+  if (!state.vibe) setVibe(true);
+  let typingUntil = Date.now() + 4000;
+  let pauseUntil = 0;
+  vibe.demoTimer = setInterval(() => {
+    const now = Date.now();
+    if (now < typingUntil) {
+      if (Math.random() < 0.8) sendVibe(Math.random() < 0.05 ? 'click' : 'key');
+      return;
+    }
+    if (!pauseUntil) { pauseUntil = now + 9000 + Math.random() * 5000; return; }
+    if (now >= pauseUntil) { typingUntil = now + 3000 + Math.random() * 3000; pauseUntil = 0; }
+  }, 90);
+}
+
+function setVibe(enabled) {
+  state.vibe = !!enabled;
+  saveState();
+  if (keysWanted()) startVibeSources(); else stopVibeSources();
+  if (petWin && !petWin.isDestroyed()) petWin.webContents.send('vibe-changed', state.vibe);
+  if (tray) refreshTrayMenu();
+  if (panelWin && !panelWin.isDestroyed()) panelWin.webContents.send('state-updated', publicState());
+}
+
 // ---------- 生命周期 ----------
 let reminderTimer = null;
 let cursorTimer = null;
+// 找回磁盘上还在、但 store 已经不引用的生成帧（旧版重做跑步失败会清空整组）。
+// 必须在任何 cleanupOldGenFiles 之前，也在建窗前，首帧就能用上
+function recoverOrphanFrames() {
+  if (!state.customGenIdle || !fs.existsSync(state.customGenIdle)) return [];
+  try {
+    const dir = app.getPath('userData');
+    const picked = pickOrphanFrames(fs.readdirSync(dir), frameTs(path.basename(state.customGenIdle)));
+    const full = (n) => (n ? path.join(dir, n) : null);
+    picked.run = picked.run.map(full);
+    Object.keys(picked.actions).forEach((k) => { picked.actions[k] = full(picked.actions[k]); });
+    const plan = planRecovery(state, picked, (f) => fs.existsSync(f));
+    if (!plan.changed.length) return [];
+    state.customGenRunSeq = plan.state.customGenRunSeq;
+    state.customGenActions = plan.state.customGenActions;
+    plan.changed.filter((k) => k !== 'run').forEach((k) => {
+      const f = state.customGenActions[k];
+      if (keyFrameIfOpaque(f)) normalizePoseFrame(f);
+    });
+    saveState();
+    if (plan.changed.includes('run')) normalizeRunSequence();
+    dataUrlCache.clear();
+    return plan.changed;
+  } catch (e) { return []; }
+}
+
+// 已在 store 里但没带透明通道的姿势帧（早期生成的），启动时补抠一次
+function keyExistingPoseFrames() {
+  const files = Object.values(state.customGenActions || {}).filter((f) => f && fs.existsSync(f));
+  let n = 0;
+  files.forEach((f) => { if (keyFrameIfOpaque(f)) { normalizePoseFrame(f); n++; } });
+  if (n) dataUrlCache.clear();
+  return n;
+}
+
 app.whenReady().then(() => {
+  recoverOrphanFrames();
+  keyExistingPoseFrames();
   createPetWindow();
   createPanelWindow();
   buildTray();
@@ -1755,12 +2073,73 @@ app.whenReady().then(() => {
   if (process.env.RUN_DEMO === '1') setTimeout(() => {
     if (petWin) petWin.webContents.send('pet-say', { action: 'run' });
   }, 3500);
+  if (keysWanted()) startVibeSources();
+  else setKeySource('off');
+  try {
+    powerMonitor.on('resume', restartVibeSources);
+    powerMonitor.on('unlock-screen', restartVibeSources);
+  } catch (e) { /* ignore */ }
+  // 启动安顿好之后，把上次扑中藏起的纸箭头推回来（只还一次）
+  setTimeout(() => returnArrow('startup'), 8000);
+  if (process.env.VIBE_DEMO === '1') setTimeout(startVibeDemo, 2500);
+  // 静音实录钩子：只在设置了环境变量时生效
+  const demoSend = (msg) => petWin && !petWin.isDestroyed() && petWin.webContents.send('pet-say', msg);
+  const demoAt = (ms, fn) => setTimeout(fn, ms);
+  if (process.env.KEY_DEMO === '1') {
+    demoAt(2000, () => { demoSend({ action: 'demo-silent' }); demoSend({ action: 'groom-loop', ms: 16000 }); });
+    demoAt(4500, () => sendVibe('key', 1));                       // 单敲：转耳，爪还举着
+    [7000, 7350, 7700, 8100, 8500, 9300, 9700, 10100].forEach((t) => demoAt(t, () => sendVibe('key', 2)));  // 一串：抬眼
+  }
+  if (process.env.GROOM_DEMO === '1') {
+    demoAt(2000, () => demoSend({ action: 'demo-silent' }));
+    demoAt(2500, () => demoSend({ action: 'patrol' }));
+  }
+  if (process.env.TEASE_DEMO === '1') {
+    demoAt(2000, () => demoSend({ action: 'demo-silent' }));
+    demoAt(3000, () => demoSend({ action: 'tease-miss' }));
+  }
+
+  // 静音实录：PET_REC=<目录> 时每 100ms 截一次桌宠窗口（实际显示尺寸），只用于自测
+  if (process.env.PET_REC) {
+    const recDir = process.env.PET_REC;
+    try { fs.mkdirSync(recDir, { recursive: true }); } catch (e) { /* ignore */ }
+    let recN = 0;
+    let recBusy = false;
+    setInterval(() => {
+      if (recBusy || !petWin || petWin.isDestroyed()) return;
+      recBusy = true;
+      const t = Date.now();
+      const bx = petWin.getBounds();
+      petWin.webContents.capturePage().then((img) => {
+        const name = [String(recN++).padStart(5, '0'), t, bx.x, bx.y, bx.width, bx.height].join('_') + '.png';
+        fs.writeFile(path.join(recDir, name), img.toPNG(), () => {});
+      }).catch(() => {}).finally(() => { recBusy = false; });
+    }, 100);
+  }
+
+  // 行为回放探针：PET_PROBE=<文件> 时每 50ms 记录一次渲染层状态（mode、类名、当前帧），只用于自测
+  if (process.env.PET_PROBE) {
+    const probeOut = process.env.PET_PROBE;
+    const probeJs = "(()=>{const p=document.getElementById('pet');const w=p&&p.querySelector('.pet-photo-wrap');" +
+      "const im=[...document.querySelectorAll('.pet-photo-img')].filter(i=>getComputedStyle(i).opacity>0.5).map(i=>(i.src||'').split('/').pop().slice(0,28));" +
+      "return [typeof mode!=='undefined'?mode:'?',p?p.className:'',w?w.className:'',im.join('|')].join(' ; ')})()";
+    let lastLine = '';
+    setInterval(() => {
+      if (!petWin || petWin.isDestroyed()) return;
+      petWin.webContents.executeJavaScript(probeJs).then((line) => {
+        if (line === lastLine) return;
+        lastLine = line;
+        fs.appendFile(probeOut, Date.now() + ' ' + line + '\n', () => {});
+      }).catch(() => {});
+    }, 50);
+  }
 
   // 光标位置广播：让桌宠的视线/身体跟随用户（10Hz，轻量）
   cursorTimer = setInterval(() => {
     if (!petWin || petWin.isDestroyed()) return;
     try {
       const c = screen.getCursorScreenPoint();
+      trackVibeCursor(c);
       const b = petWin.getBounds();
       petWin.webContents.send('cursor', {
         x: c.x - (b.x + b.width / 2),
@@ -1793,6 +2172,8 @@ app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   if (reminderTimer) clearInterval(reminderTimer);
   if (cursorTimer) clearInterval(cursorTimer);
+  if (vibe.demoTimer) clearInterval(vibe.demoTimer);
+  stopVibeSources();
   clearDemoTimers();
   if (pomo.timer) clearInterval(pomo.timer);   // 只停计时器，保留 state.pomo 供下次续跑
   for (const child of genChildren) { try { child.kill('SIGKILL'); } catch (e) { /* already gone */ } }

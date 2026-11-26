@@ -185,7 +185,8 @@ test('奔跑帧写入序列槽位，不得混进动作帧', () => {
 
 test('生成帧必须下发 runSeq，且奔跑帧不走逐帧高度归一化', () => {
   const frames = extractFunctionBody('customFrames');
-  assert.match(frames, /runSeq: customRunSeq\(\)/, '用户生成帧返回 runSeq');
+  assert.match(frames, /const runSeq = customRunSeq\(\)/, '用户生成帧返回 runSeq');
+  assert.match(frames, /walkSeq: customWalkSeq\(runSeq\)/, '自定义猫走路用四腿步态帧');
   assert.match(frames, /runSeq: seq\.run/, '内置猫返回自己的 8 帧跑步序列');
   // 内置猫是 3D 素材而不是用户原图：raw-photo 会套白边卡片 + object-fit:cover，把透明帧裁掉
   assert.match(frames, /generated: true\s*\/\/ 内置猫/, '内置猫必须标成 generated，避免被当成原图');
@@ -281,4 +282,67 @@ test('渲染层：真帧序列下 CSS 不叠加缩放步态', () => {
   assert.match(css, /running:not\(\.run-seq\) \.pet-photo-img \{\s*animation: runGallop/, 'runGallop 只用于无真帧的兜底');
   assert.match(css, /#pet\.form-custom\.running \.pet-shadow \{[^}]*shadowRun/, '保留影子节奏');
   assert.match(css, /#pet\.form-custom\.running\.face-left \.pet-photo-img \{ transform: scaleX\(-1\); \}/, '向左跑用 scaleX(-1)');
+});
+
+function petFnBody(pet, name) {
+  const start = pet.indexOf(`function ${name}(`);
+  assert.ok(start >= 0, `pet.js: function ${name} not found`);
+  const brace = pet.indexOf('{', start);
+  let depth = 0;
+  for (let i = brace; i < pet.length; i++) {
+    if (pet[i] === '{') depth++;
+    else if (pet[i] === '}' && --depth === 0) return pet.slice(brace, i + 1);
+  }
+  return '';
+}
+
+test('渲染层：键盘注意力只叠加耳/眼，首键不打断舔爪，停手后接着舔同一帧', () => {
+  const pet = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'pet.js'), 'utf-8');
+  const feed = petFnBody(pet, 'feedAttention');
+  assert.match(feed, /groomPaused = true/);
+  assert.match(feed, /hardCutTo\(ear\)/);
+  assert.doesNotMatch(feed, /bumpSession|setIdle|playAction/, '注意力不得接管全身');
+  const tick = petFnBody(pet, 'attTick');
+  assert.match(tick, /groomPaused = false/);
+  assert.match(tick, /groomIdx % g\.frames\.length/);
+  assert.match(petFnBody(pet, 'startGroom'), /if \(groomPaused\) return/);
+  // 按键在写代码开关判断之前喂给注意力：不开写代码模式也能感知
+  const vi = petFnBody(pet, 'onVibeInput');
+  assert.ok(vi.indexOf('feedAttention') >= 0 && vi.indexOf('feedAttention') < vi.indexOf('vibeOn'));
+});
+
+test('渲染层：拖拽/菜单/切换形象会作废注意力、巡视与逗猫', () => {
+  const pet = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'pet.js'), 'utf-8');
+  const life = petFnBody(pet, 'interruptOwnLife');
+  ['clearAttention', 'clearPatrol', 'clearTease'].forEach((f) => assert.match(life, new RegExp(f)));
+  ['beginDrag', 'applyForm', 'playAction', 'playBehavior', 'enterNap', 'setIdle'].forEach((f) =>
+    assert.match(petFnBody(pet, f), /interruptOwnLife\(\)/, `${f} 必须打断自主生活`));
+  // 巡视/逗猫的延时回调都校验 session，旧回调自动失效
+  assert.match(petFnBody(pet, 'patrolLater'), /session !== mySession/);
+  assert.match(petFnBody(pet, 'teaseLater'), /session !== mySession/);
+});
+
+test('渲染层：巡视先望后倾再迈步，近边减速并嗅，转身头→肩胯→尾', () => {
+  const pet = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'pet.js'), 'utf-8');
+  const sp = petFnBody(pet, 'startPatrol');
+  assert.ok(sp.indexOf('walk-look') < sp.indexOf('walk-lean') && sp.indexOf('walk-lean') < sp.indexOf('stepTo'));
+  assert.match(sp, /slowNear/);
+  const edge = petFnBody(pet, 'patrolAtEdge');
+  const order = ['sniff', 'turn-head', 'turn-body', 'turn-tail'].map((c) => edge.indexOf(c));
+  assert.ok(order.every((v, i) => v >= 0 && (i === 0 || v > order[i - 1])), `order=${order}`);
+});
+
+test('主进程：纸箭头只在番茄休息或启动安顿后归还', () => {
+  assert.match(SRC, /returnArrow\('startup'\)/);
+  assert.match(SRC, /returnArrow\('pomo-break'\)/);
+  assert.match(extractFunctionBody('returnArrow'), /shouldReturn/);
+});
+
+test('重做跑步失败要还原旧序列；启动时先找回孤儿帧再建窗', () => {
+  const job = extractFunctionBody('startGenJob');
+  assert.match(job, /const prevRunSeq = /, '清空前留底');
+  assert.match(job, /shouldRestoreRunSeq\(state\.customGenRunSeq, prevRunSeq/);
+  const ready = SRC.slice(SRC.indexOf('app.whenReady().then('));
+  assert.ok(ready.indexOf('recoverOrphanFrames()') < ready.indexOf('createPetWindow()'), '首帧就要用上找回的帧');
+  assert.ok(SRC.indexOf('function recoverOrphanFrames') > 0);
 });
