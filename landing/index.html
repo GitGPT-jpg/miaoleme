@@ -19,9 +19,7 @@
   h1 { font-size: 34px; margin-top: 18px; }
   h1 .grad { background: linear-gradient(90deg, #6a8dff, #8f6aff, #ff8a5c); -webkit-background-clip: text; background-clip: text; color: transparent; }
   .tagline { color: #7a8093; margin-top: 10px; font-size: 16px; max-width: 720px; margin-left: auto; margin-right: auto; }
-  .hero-cat { margin: 24px auto 0; width: 210px; display: block; filter: drop-shadow(0 18px 24px rgba(40,50,90,.25)); animation: float 3.6s ease-in-out infinite; }
-  @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
-  .badges { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 20px; }
+    .badges { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 20px; }
   .badge { background: #fff; border-radius: 20px; padding: 6px 14px; font-size: 13px; color: #5a6280; box-shadow: 0 2px 8px rgba(40,50,90,.08); }
   section { margin: 46px 0; }
   h2 { font-size: 22px; text-align: center; margin-bottom: 26px; }
@@ -59,13 +57,22 @@
   footer { text-align: center; padding: 30px 0 46px; color: #9aa0b0; font-size: 12px; }
   @media (max-width: 640px) { h1 { font-size: 26px; } header img.logo { width: 72px; height: 72px; } }
 </style>
+<link rel="stylesheet" href="cat.css" />
 </head>
 <body>
   <header>
     <img class="logo" src="assets/icon.png" alt="喵了么图标" />
     <h1><span class="grad">喵了么</span> · 桌面桌宠小助手</h1>
     <p class="tagline">一只住在桌面上的 3D 猫咪：内置形象持续呼吸摆尾，提醒你喝水开会赶 DDL，陪你玩游戏、帮你决定吃什么——上传你的照片（支持 iPhone 直出 HEIC），还能变成你自己的专属桌宠（需配置生成服务）。</p>
-    <img class="hero-cat" src="assets/cat-3d-idle.webp" alt="3D 猫咪" />
+    <div class="cat-stage" id="cat-stage" role="img" aria-label="一只正在洗脸的奶油猫">
+      <div class="cat-shadow"></div>
+      <div class="cat-body"></div>
+    </div>
+    <div class="cat-try">
+      <input type="text" placeholder="打几个字试试" aria-label="随便打几个字" />
+      <input type="text" placeholder="按 Tab 换一格" aria-label="第二个输入框" />
+    </div>
+    <p class="cat-hint">敲键盘它会听见；光标在爪边绕一绕再停住，它会扑。手机上轻轻摸摸它的脸。</p>
     <div class="badges">
       <span class="badge">🐱 三种内置形态 + 自定义</span>
       <span class="badge">📷 照片变 3D 桌宠（HEIC/大图/竖拍都支持）</span>
@@ -153,5 +160,7 @@
   </div>
 
   <footer>喵了么 · 桌面桌宠小助手 · v0.6.5 · 让提醒变成养猫的快乐</footer>
+<script src="cat-brain.js"></script>
+<script src="cat.js"></script>
 </body>
 </html>
