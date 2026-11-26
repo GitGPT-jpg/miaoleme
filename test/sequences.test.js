@@ -66,3 +66,34 @@ test('内置转耳素材都在仓库里，并与原帧同尺寸', () => {
     assert.deepEqual(size(e), size(a), `${f} 尺寸一致`);
   }
 });
+
+test('行为真帧：整条序列齐备才给，缺一帧整条跳过；姿态按文件逐个给', () => {
+  const { BEHAVIOR_FILES, POSE_FILES } = require('../lib/sequences');
+  const all = buildBundledSequences((f) => 'data:' + f);
+  assert.deepStrictEqual(Object.keys(all.behaviors).sort(), Object.keys(BEHAVIOR_FILES).sort());
+  assert.deepStrictEqual(Object.keys(all.poses).sort(), Object.keys(POSE_FILES).sort());
+  Object.values(all.behaviors).forEach((b) => {
+    assert.ok(b.frames.length >= 2 && b.frameMs > 0 && b.fadeMs >= 0 && b.fadeMs <= b.frameMs);
+  });
+  const noKnead2 = buildBundledSequences((f) => (f === 'act-knead-2.png' ? null : 'data:' + f));
+  assert.strictEqual(noKnead2.behaviors.knead, undefined);
+  assert.ok(noKnead2.behaviors.loaf);
+  const noSniff = buildBundledSequences((f) => (f === POSE_FILES.sniff ? null : 'data:' + f));
+  assert.strictEqual(noSniff.poses.sniff, undefined);
+  assert.ok(noSniff.poses.crouch);
+});
+
+test('行为与姿态素材都在仓库里，尺寸与母版画布一致、脚底对齐', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { BEHAVIOR_FILES, POSE_FILES } = require('../lib/sequences');
+  const files = new Set(Object.values(POSE_FILES));
+  Object.values(BEHAVIOR_FILES).forEach((b) => b.files.forEach((f) => files.add(f)));
+  files.forEach((f) => {
+    assert.ok(fs.existsSync(path.join(__dirname, '..', 'assets', f)), f);
+    if (f.startsWith('act-stretch-')) return;               // 旧伸懒腰帧另有画布，由动作播放器按 contain 适配
+    const buf = fs.readFileSync(path.join(__dirname, '..', 'assets', f));
+    assert.strictEqual(buf.readUInt32BE(16), 360, f + ' 宽');
+    assert.ok(buf.readUInt32BE(20) >= 270 && buf.readUInt32BE(20) <= 290, f + ' 高');
+  });
+});

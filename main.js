@@ -192,11 +192,11 @@ function customFrames() {
       });
     }
     const runSeq = customRunSeq();
-    return { idle, idleAlt: idle, walk, walkAlt: walk, happy: idle, actions, meta: ACTION_META, sequences: {}, walkSeq: customWalkSeq(runSeq), runSeq, generated: true };
+    return { idle, idleAlt: idle, walk, walkAlt: walk, happy: idle, actions, meta: ACTION_META, sequences: {}, walkSeq: customWalkSeq(runSeq), runSeq, behaviorSeq: {}, poses: {}, generated: true };
   }
   if (state.customImage && fs.existsSync(state.customImage)) {
     const u = fileToDataUrl(state.customImage);
-    return { idle: u, idleAlt: u, walk: u, walkAlt: u, happy: u, actions: {}, meta: ACTION_META, sequences: {}, walkSeq: null, runSeq: null, generated: false };
+    return { idle: u, idleAlt: u, walk: u, walkAlt: u, happy: u, actions: {}, meta: ACTION_META, sequences: {}, walkSeq: null, runSeq: null, behaviorSeq: {}, poses: {}, generated: false };
   }
   const actions = {};
   Object.keys(BUNDLED_ACTIONS).forEach((k) => {
@@ -217,6 +217,8 @@ function customFrames() {
     meta: ACTION_META,
     sequences: seq.actions,
     walkSeq: seq.walk,
+    behaviorSeq: seq.behaviors, // 小生活行为的真帧序列
+    poses: seq.poses,           // 巡视/逗猫的单帧姿态
     runSeq: seq.run,         // 内置猫的 8 帧跑步序列；素材不全时为 null，渲染层用走路帧兜底
     generated: true          // 内置猫是 3D 素材，不是用户原图：别套 raw-photo 的白边卡片样式
   };

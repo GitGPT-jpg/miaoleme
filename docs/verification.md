@@ -351,3 +351,21 @@ v0.9 空闲时自己走动更多（150s 里 walk/run/patrol 约 31s），走路�
 - `npm test`：179 项全部通过（新增 `test/recover.test.js` 及启动顺序结构测试）。
 
 待补：其余动作（转身、起身、落爪等）的多帧序列仍需配置可用的图像生成服务后重新生成。
+
+## 十二、v0.10.0：真帧动作
+
+以 assets/cat-3d-idle.png 为母版补画 21 张动作帧（360×280 画布，脚底对齐同一基线），替换原来用 CSS 形变和表情符号拼出的动作。
+
+- 小生活：loaf、yawn、knead、scratch、look、tail、butterfly、yarn、pounce、stretch 由 `BEHAVIOR_FILES` 描述，播放时只保留轻微呼吸，不再叠加缩放旋转。任意一帧缺失时整条行为回落到旧的单帧表现。
+- 巡视：alert（起身竖耳）→ 四腿走 → sniff（屏幕边嗅）→ turnBack（头先回）→ turnFront（肩胯跟上）→ 镜像 → 走回 → sitDown（坐回窝）。
+- 逗猫：crouch → pounce → 扑空 pawUp 后洗脸；扑中 land 后叼走纸箭头。
+- 用户上传的猫没有这些帧，`behaviorSeq`、`poses` 为空，行为保持原样。
+
+### 本机回放（CDP 采样可见帧，开发版）
+
+- knead：knead0 ↔ knead1 循环，结束回 idle。
+- loaf：loaf0 → loaf1 → loaf2 停住，结束前回 loaf0 再回 idle。
+- 巡视：alert → walk 0–3 循环 → sniff → turnBack → turnFront → 镜像 turnBack → 反向走 → sitDown → idle。
+- 逗猫：crouch → pounce → pawUp → 洗脸。
+
+待测：真人在实际显示尺寸下目视确认 land 帧朝向和 turn-2 正面帧的衔接是否自然。

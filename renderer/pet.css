@@ -781,9 +781,35 @@ html, body {
   65% { rotate: 4deg; translate: 6px 2px; }
 }
 
+/* ---------- 有真帧时：姿态由画好的帧来演，CSS 不再挤压变形，只留呼吸和位移 ---------- */
+#pet.beh-seq .pet-photo-wrap { animation: seqBreath 3.2s ease-in-out infinite; scale: 1 1; rotate: 0deg; }
+@keyframes seqBreath {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -1px; }
+}
+#pet.posed .pet-photo-wrap { scale: 1 1; rotate: 0deg; }
+#pet.posed.sniff .pet-photo-wrap,
+#pet.posed.crouch .pet-photo-wrap,
+#pet.posed.turn-tail .pet-photo-wrap { animation: none; }
+#pet.posed.walk-look .pet-photo-wrap,
+#pet.posed.turn-head .pet-photo-wrap,
+#pet.posed.turn-body .pet-photo-wrap { translate: 0 0; }
+#pet.posed.crouch .pet-photo-wrap { animation: crouchShift .62s ease-in-out; }
+@keyframes crouchShift {
+  0%, 30%, 100% { translate: 0 0; }
+  50% { translate: -2px 0; }
+  70% { translate: 2px 0; }
+}
+#pet.posed.pounce .pet-photo-wrap { animation: pounceLeap .34s cubic-bezier(.2,.8,.3,1) forwards; }
+#pet.posed.pounce.face-left .pet-photo-wrap { animation-name: pounceLeapL; }
+@keyframes pounceLeap { 0% { translate: 0 0; } 50% { translate: 14px -10px; } 100% { translate: 18px 0; } }
+@keyframes pounceLeapL { 0% { translate: 0 0; } 50% { translate: -14px -10px; } 100% { translate: -18px 0; } }
+#pet.posed.paw-hold .pet-photo-wrap { scale: 1 1; rotate: 0deg; }
+
 @media (prefers-reduced-motion: reduce) {
   .pet-photo-wrap { transition: none; }
   #pet.att-flick .pet-photo-wrap,
+  #pet.beh-seq .pet-photo-wrap,
   #pet.sniff .pet-photo-wrap,
   #pet.turn-tail .pet-photo-wrap,
   #pet.crouch .pet-photo-wrap,
