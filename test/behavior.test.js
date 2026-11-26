@@ -52,3 +52,21 @@ test('roamTargetX heads back toward home when it drifted far', () => {
   const x = B.roamTargetX(1000, 300, 20, 1180, () => 0.9);
   assert.ok(x < 1000);
 });
+
+test('circadianWeights：深夜更爱睡、傍晚更疯，不改原表', () => {
+  const w = (l, n) => l.find((b) => b.name === n).weight;
+  const base = B.BEHAVIORS.map((b) => b.weight);
+  const night = B.circadianWeights(B.BEHAVIORS, 2);
+  const dusk = B.circadianWeights(B.BEHAVIORS, 18);
+  assert.ok(w(night, 'catnap') > w(B.BEHAVIORS, 'catnap'));
+  assert.ok(w(night, 'zoomies') < w(B.BEHAVIORS, 'zoomies'));
+  assert.ok(w(dusk, 'zoomies') > w(B.BEHAVIORS, 'zoomies'));
+  assert.strictEqual(w(B.circadianWeights(B.BEHAVIORS, 26), 'catnap'), w(night, 'catnap'));
+  assert.deepStrictEqual(B.BEHAVIORS.map((b) => b.weight), base);
+  assert.notStrictEqual(night, B.BEHAVIORS);
+});
+
+test('新的真猫行为都在候选里，且有正权重', () => {
+  const names = B.BEHAVIORS.map((b) => b.name);
+  ['shake', 'earscratch', 'belly', 'chatter', 'sitlick', 'tailwrap'].forEach((n) => assert.ok(names.includes(n), n));
+});

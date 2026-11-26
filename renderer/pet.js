@@ -45,7 +45,13 @@ const BEHAVIOR_FX = {
   groom:     { label: '舔舔毛，保持美丽~', ms: 3600, frame: 'idle2' },
   roll:      { label: '打个滚~', ms: 3200, frame: 'idle' },
   eat:       { label: '吧唧吧唧 🐟', ms: 3600, frame: 'idle2', prop: '🐟' },
-  drink:     { label: '咕噜咕噜~', ms: 3000, frame: 'idle2', prop: '💧' }
+  drink:     { label: '咕噜咕噜~', ms: 3000, frame: 'idle2', prop: '💧' },
+  shake:     { label: '抖一抖~', ms: 1300, frame: 'idle' },
+  earscratch:{ label: '后腿挠挠耳朵~', ms: 2600, frame: 'groom' },
+  belly:     { label: '给你看肚皮…但不许摸！', ms: 6200, frame: 'roll' },
+  chatter:   { label: '咔咔咔…窗外有鸟！', ms: 3200, frame: 'idle' },
+  sitlick:   { label: '舔舔胸口的毛~', ms: 4600, frame: 'idle2' },
+  tailwrap:  { label: '尾巴盘好，坐端正', ms: 6000, frame: 'idle2' }
 };
 const BEH_CLASSES = Object.keys(BEHAVIOR_FX).map((n) => 'beh-' + n).concat('beh-seq');
 const NAP_CLASSES = ['vibe-sleeping', 'nap-twitch'];
@@ -91,9 +97,20 @@ const tease = AttentionMath.createTease();
 const petArrow = document.querySelector('.pet-arrow');
 let teaseCoolUntil = 0;
 let teaseTimers = [];
+// 真猫小习惯的状态（眨眼/被摸/受惊），需在任何打断函数之前声明
+const LIFE_CLASSES = ['purring', 'startle-jump'];
+let blinkTimer = null;
+let blinking = false;
+let petAcc = 0;
+let petLast = null;
+let petState = null;
+let clickTimes = [];
 // 拖拽/菜单/喂养/切形象等打断：注意力、巡视、逗猫的旧回调一起失效
 function interruptOwnLife() {
   clearAttention();
+  blinking = false;
+  if (petState) clearPetted();
+  pet.classList.remove(...LIFE_CLASSES);
   clearPatrol();
   clearTease();
   groomLoop = false;
@@ -510,7 +527,7 @@ function beginDrag(e) {
   if (e.button !== 0 || drag) return;
   e.preventDefault();
   const mySession = session;
-  drag = { ready: false, moved: false, mx: e.screenX, my: e.screenY, wx: 0, wy: 0 };
+  drag = { ready: false, moved: false, mx: e.screenX, my: e.screenY, wx: 0, wy: 0, speed: 0, lt: 0 };
   mode = 'drag';
   clearBehaviorTimers();
   interruptOwnLife();
@@ -534,12 +551,19 @@ function endDrag() {
   pet.classList.remove('dragging');
   mode = 'idle';
   if (d.moved && d.ready) {
+    const flung = d.speed > 2.2;   // 被猛甩：px/ms
     window.api.getWinPos().then((p) => {
       cur = { x: p.x, y: p.y };
       home = { x: p.x, y: p.y };
       window.api.saveWinPos(p.x, p.y);
+      if (mode !== 'idle') return;
+      if (flung && startStartle()) return;
+      // 被放下后常常抖一抖毛，把被拎乱的毛理顺
+      if (currentForm === 'custom' && F.behaviorSeq && F.behaviorSeq.shake && Math.random() < 0.3) { playBehavior('shake'); return; }
       scheduleWander();
     });
+  } else if (noteClick() && startStartle()) {
+    // 连戳三下：吓一跳
   } else {
     const lines = ['嘿嘿~', '在的在的！', '需要我做点什么吗？', '最喜欢你啦~', '戳我干嘛呀 >_<'];
     say(lines[Math.floor(Math.random() * lines.length)], 'happy');
@@ -554,11 +578,18 @@ document.addEventListener('mousemove', (e) => {
     const nx = drag.wx + (e.screenX - drag.mx);
     const ny = drag.wy + (e.screenY - drag.my);
     if (Math.abs(nx - drag.wx) + Math.abs(ny - drag.wy) > 2) drag.moved = true;
+    const now = performance.now();
+    if (drag.lt) {
+      const v = Math.hypot(e.screenX - drag.lx, e.screenY - drag.ly) / Math.max(1, now - drag.lt);
+      drag.speed = drag.speed * 0.6 + v * 0.4;
+    }
+    drag.lx = e.screenX; drag.ly = e.screenY; drag.lt = now;
     cur = { x: nx, y: ny };
     window.api.setWinPos(nx, ny);
     return;
   }
   setIgnore(!overInteractive(e.clientX, e.clientY));
+  onPetHover(e);
 });
 window.addEventListener('mouseup', endDrag);
 window.addEventListener('blur', endDrag);
@@ -771,7 +802,7 @@ function scheduleWander() {
 
 async function startWander() {
   if (currentForm !== 'custom' || mode !== 'idle' || (vibeOn && vibePhaseState === 'typing')) { scheduleWander(); return; }
-  const b = BehaviorMath.pickBehavior(BehaviorMath.BEHAVIORS, behaviorRecent);
+  const b = BehaviorMath.pickBehavior(BehaviorMath.circadianWeights(BehaviorMath.BEHAVIORS, new Date().getHours()), behaviorRecent);
   behaviorRecent = BehaviorMath.pushRecent(behaviorRecent, b);
   if (b !== 'walk' && b !== 'run' && b !== 'zoomies') {
     if (b === 'groom' && startGroom()) return;
@@ -960,6 +991,7 @@ function playBehaviorFrames(mySession, bs, totalMs) {
 function attKind() {
   if (mode === 'act' && pet.classList.contains('act-groom') && groomLoop) return 'groom';
   if (mode === 'nap') return 'nap';
+  if (mode === 'pet') return null;   // 被摸着眯眼呼噜：不为键盘分心
   if (mode === 'idle' && !pet.classList.contains('raw-photo')) return 'idle';
   if (mode === 'idle') return 'lean';
   if (mode === 'act' || mode === 'walk' || mode === 'beh') return 'tip';
@@ -982,7 +1014,7 @@ function feedAttention(n) {
   if (r.started) {
     const kind = attKind();
     if (!kind) { attention.reset(); return; }
-    attSaved = { session, kind, url: activeUrl };
+    attSaved = { session, kind, url: stableUrl() };
     attLooked = false;
     const ear = earUrlFor(kind);
     if (kind === 'groom') groomPaused = true;   // 爪悬着，不往下舔
@@ -1322,11 +1354,19 @@ function enterNap() {
   clearProp();
   pet.classList.add('vibe-sleeping');
   vibeEl.classList.add('vibe-sleeping');
-  const url = (F.actions && F.actions.sleep) || F.idle[1] || F.idle[0];
+  const poses = napPoses();
+  let url = poses.length ? poses[Math.floor(Math.random() * poses.length)] : (F.idle[1] || F.idle[0]);
   if (url) crossfadeTo(url, 600);
-  // 睡着也不是一动不动：偶尔抖抖耳朵、蹬蹬腿
+  // 睡着也不是一动不动：偶尔抖抖耳朵、蹬蹬腿；睡久了翻个身换姿势
   sleepCycleTimer = setInterval(() => {
-    if (mode !== 'nap' || Math.random() < 0.55) return;
+    if (mode !== 'nap') return;
+    if (poses.length > 1 && Math.random() < 0.08) {
+      const others = poses.filter((u) => u !== url);
+      url = others[Math.floor(Math.random() * others.length)];
+      crossfadeTo(url, 900);
+      return;
+    }
+    if (Math.random() < 0.55) return;
     restartClass(pet, 'nap-twitch');
   }, 2600);
 }
@@ -1454,7 +1494,12 @@ window.api.onVibeChanged(applyVibe);
 window.api.onFormChanged((form) => applyForm(form));
 window.api.onPetSay((msg) => {
   if (!msg) return;
-  if (msg.action === 'run') runOnDemand();                       // 奔跑是位移行为，不走定格动作
+  if (typeof msg.action === 'string' && msg.action.startsWith('beh:')) { if (mode !== 'idle') setIdle(); playBehavior(msg.action.slice(4)); }
+  else if (msg.action === 'pet') { if (mode !== 'idle') setIdle(); startPetted({ holdMs: msg.ms || 4000 }); }
+  else if (msg.action === 'startle') startStartle();
+  else if (msg.action === 'blink') { if (mode !== 'idle') setIdle(); photoBlink(true); }
+  else if (msg.action === 'nap') { if (mode !== 'idle') setIdle(); enterNap(); }
+  else if (msg.action === 'run') runOnDemand();                       // 奔跑是位移行为，不走定格动作
   else if (msg.action === 'demo-silent') { demoSilent = true; quiet = true; bubble.classList.add('hidden'); applyVibe(false); }
   else if (msg.action === 'groom-loop') { interruptOwnLife(); if (mode !== 'idle') setIdle(); startGroom({ ms: msg.ms || 15000, silent: true }); }
   else if (msg.action === 'patrol') { if (mode !== 'idle') setIdle(); startPatrol(); }
@@ -1474,6 +1519,144 @@ window.api.onCustomImageChanged(() => {
 window.api.onFeedState((fs) => renderFeedBadge(fs));
 window.api.onRigRefresh(() => loadRig());
 
+// ---------- 真猫的小习惯：眨眼、被摸、受惊、睡姿 ----------
+
+// 写实帧眨眼：只在站着发呆、画面正是待机帧时眨；偶尔慢眨眼（猫表示信任）
+function schedulePhotoBlink(ms) {
+  clearTimeout(blinkTimer);
+  blinkTimer = setTimeout(photoBlink, ms != null ? ms : 2800 + Math.random() * 3600);
+}
+function blinkAllowed() {
+  return currentForm === 'custom' && !rigOn && !drag && mode === 'idle' && !attentionBusy() && !document.hidden;
+}
+function photoBlink(forceSlow) {
+  blinkTimer = null;
+  const base = F.idle && F.idle[0];
+  const b = pose('blink');
+  const h = pose('blinkHalf');
+  if (b && base && blinkAllowed() && activeUrl === base && !fading) {
+    const mySession = session;
+    const slow = h && (forceSlow === true || Math.random() < 0.2);
+    const steps = slow
+      ? [[h, 0, 120], [b, 200, 160], [h, 760, 200], [base, 1000, 220]]
+      : Math.random() < 0.15
+        ? [[b, 0, 50], [base, 120, 60], [b, 240, 50], [base, 360, 70]]
+        : [[b, 0, 50], [base, 130, 70]];
+    blinking = true;
+    steps.forEach(([url, at, fade], i) => setTimeout(() => {
+      if (!blinking) return;
+      if (session !== mySession || !blinkAllowed()) { blinking = false; return; }
+      crossfadeTo(url, fade);
+      if (i === steps.length - 1) blinking = false;
+    }, at));
+  }
+  schedulePhotoBlink();
+}
+// 眨眼途中被打断时，别把闭眼帧当作"原来的样子"保存下来
+function stableUrl() {
+  if (blinking || activeUrl === pose('blink') || activeUrl === pose('blinkHalf')) return (F.idle && F.idle[0]) || activeUrl;
+  return activeUrl;
+}
+
+// 被摸：在猫身上来回轻抚（不按键）→ 眯眼呼噜 → 蹭手；摸太久会烦，甩甩尾巴
+function onPetHover(e) {
+  if (e.buttons || drag || currentForm !== 'custom' || rigOn || !(e.target && e.target.closest && e.target.closest('#pet'))) {
+    petLast = null; petAcc = 0; return;
+  }
+  const now = Date.now();
+  const step = petLast && now - petLast.t < 350 ? Math.hypot(e.clientX - petLast.x, e.clientY - petLast.y) : 0;
+  petLast = { x: e.clientX, y: e.clientY, t: now };
+  if (petState) { if (step > 1) petState.lastStroke = now; return; }
+  petAcc = step ? petAcc + step : 0;
+  if (petAcc > 340 && (mode === 'idle' || mode === 'nap')) { petAcc = 0; startPetted(); }
+}
+function clearPetted() {
+  if (!petState) return;
+  petState = null;
+  pet.classList.remove('purring', 'posed');
+}
+function startPetted(opts) {
+  const o = opts || {};
+  const content = pose('content');
+  if (!content || currentForm !== 'custom' || drag) return false;
+  const mySession = bumpSession();
+  clearBehaviorTimers();
+  interruptOwnLife();
+  zoomiesLeft = 0;
+  if (rigOn) disableRig();
+  mode = 'pet';
+  pet.classList.remove('walking', 'running', 'run-seq', 'walk-seq', 'face-left', 'acting', ...ACT_CLASSES, ...BEH_CLASSES, ...NAP_CLASSES, ...LIFE_CLASSES);
+  vibeEl.classList.remove('vibe-sleeping');
+  clearProp();
+  pet.classList.add('posed', 'purring');
+  crossfadeTo(content, 420);
+  const now = Date.now();
+  petState = { start: now, lastStroke: now + (o.holdMs || 0), shown: 'content' };
+  if (!quiet && !demoSilent) say('呼噜…呼噜…', 'happy');
+  const rub = pose('rub');
+  sleepCycleTimer = setInterval(() => {
+    if (session !== mySession || !petState) { clearInterval(sleepCycleTimer); return; }
+    const t = Date.now();
+    const st = petState;
+    if (t - st.lastStroke > 1600) { finishPetted(mySession, false); return; }
+    if (t - st.start > (o.tooLongMs || 11000)) { finishPetted(mySession, true); return; }
+    const el = t - st.start;
+    const want = rub && el > 2400 && Math.floor((el - 2400) / 1800) % 2 === 0 ? 'rub' : 'content';
+    if (want !== st.shown) { st.shown = want; crossfadeTo(want === 'rub' ? rub : content, 520); }
+  }, 250);
+  return true;
+}
+function finishPetted(mySession, annoyed) {
+  if (session !== mySession) return;
+  clearPetted();
+  setIdle();
+  if (annoyed) {
+    if (!quiet && !demoSilent) say('好啦好啦，够了！', 'normal');
+    playBehavior(F.behaviorSeq && F.behaviorSeq.tail ? 'tail' : 'shake');   // 摸烦了：甩尾巴
+    return;
+  }
+  if (F.idle.length) crossfadeTo(F.idle[0], 480);
+  if (Math.random() < 0.5) schedulePhotoBlink(900); // 摸完满足地慢眨一下
+  scheduleWander();
+}
+
+// 受惊：连戳三下，或被猛甩一下 → 炸一下跳起来，然后抖抖毛恢复体面
+function noteClick() {
+  const now = Date.now();
+  clickTimes = clickTimes.filter((t) => now - t < 900).concat(now);
+  return clickTimes.length >= 3;
+}
+function startStartle() {
+  const st = pose('startle');
+  if (!st || currentForm !== 'custom' || drag) return false;
+  clickTimes = [];
+  const mySession = bumpSession();
+  clearBehaviorTimers();
+  interruptOwnLife();
+  zoomiesLeft = 0;
+  if (rigOn) disableRig();
+  mode = 'act';
+  pet.classList.remove('walking', 'running', 'run-seq', 'walk-seq', 'face-left', ...ACT_CLASSES, ...BEH_CLASSES, ...NAP_CLASSES, ...LIFE_CLASSES);
+  vibeEl.classList.remove('vibe-sleeping');
+  clearProp();
+  pet.classList.add('acting', 'posed');
+  hardCutTo(st);
+  restartClass(pet, 'startle-jump');
+  if (!quiet && !demoSilent) say('喵！！', 'normal');
+  actTimer = setTimeout(() => {
+    if (session !== mySession) return;
+    pet.classList.remove('startle-jump', 'posed', 'acting');
+    mode = 'idle';
+    playBehavior(F.behaviorSeq && F.behaviorSeq.shake ? 'shake' : 'look');
+  }, 950);
+  return true;
+}
+
+// 睡姿：团成一圈或者侧躺摊开；睡久了偶尔换个姿势
+function napPoses() {
+  return [pose('curl'), pose('sideSleep'), F.actions && F.actions.sleep].filter(Boolean);
+}
+
 // 初始化
 window.api.getState().then((s) => {
   quiet = !!s.quiet;
@@ -1491,3 +1674,4 @@ window.api.onStateUpdated((s) => {
 window.api.onSenseKeys((on) => { senseOn = !!on; if (!senseOn) clearAttention(); });
 window.api.onKeySource((src) => { keySource = src || keySource; });
 scheduleWander();
+schedulePhotoBlink();

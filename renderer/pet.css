@@ -672,6 +672,8 @@ html, body {
 @media (prefers-reduced-motion: reduce) {
   #pet[class*="beh-"] .pet-photo-wrap,
   #pet.vibe-sleeping .pet-photo-wrap,
+  #pet.purring .pet-photo-wrap,
+  #pet.startle-jump .pet-photo-wrap,
   #nap-zzz span,
   .pet-prop { animation: none !important; }
   #nap-zzz span { opacity: .8; }
@@ -817,4 +819,26 @@ html, body {
   #pet.arrow-push .pet-photo-wrap,
   #pet.arrow-push .pet-arrow,
   #pet.nap-twitch .pet-photo-wrap { animation: none !important; }
+}
+
+/* ---------- 真猫小习惯：被摸时呼噜的细微震动、受惊炸起 ---------- */
+#pet.purring .pet-photo-wrap {
+  transform-origin: 50% 100%;
+  animation: purrBuzz .12s linear infinite;
+}
+@keyframes purrBuzz {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(.5px, 0); }
+  75% { transform: translate(-.5px, .3px); }
+}
+#pet.startle-jump .pet-photo-wrap {
+  transform-origin: 50% 100%;
+  animation: startleJump .5s cubic-bezier(.2, .9, .3, 1);
+}
+@keyframes startleJump {
+  0% { transform: translateY(0) scale(1, 1); }
+  12% { transform: translateY(2px) scale(1.04, .94); }
+  40% { transform: translateY(-18px) scale(.97, 1.05); }
+  78% { transform: translateY(0) scale(1.03, .96); }
+  100% { transform: translateY(0) scale(1, 1); }
 }

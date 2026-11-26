@@ -369,3 +369,25 @@ v0.9 空闲时自己走动更多（150s 里 walk/run/patrol 约 31s），走路�
 - 逗猫：crouch → pounce → pawUp → 洗脸。
 
 待测：真人在实际显示尺寸下目视确认 land 帧朝向和 turn-2 正面帧的衔接是否自然。
+
+## 十三、v0.11.0：更像真猫的小习惯
+
+新增 16 张真帧（同一母版、360×280 画布、脚底同一基线）：blink、blink-half、shake ×2、earscratch ×2、belly ×2、curl、side-sleep、startle、content、chatter、rub、sit-lick、tail-wrap。
+
+- 眨眼：只在站立待机帧上眨；普通眨眼 120 ms，15% 连眨两下，20% 慢眨（半闭 → 闭 → 半闭 → 睁，约 1.2 s）。窗口隐藏时不眨。
+- 抚摸：鼠标在猫身上不按键来回移动累计超过 340 px 进入 `pet` 模式，content 帧加 purring 微震；约 2.4 s 后蹭手（rub）；停摸后回 idle。抚摸期间不响应键盘注意力。
+- 受惊：拖拽松手时速度 > 2.2 px/ms，或短时间连点，播放 startle 帧加上跳，再抖毛。普通拖放 30% 概率抖毛。
+- 小生活新增 shake、earscratch、belly、chatter、sitlick、tailwrap；`circadianWeights` 按钟点调整权重（深夜偏睡、傍晚偏玩）。
+- 打盹随机选 curl、sideSleep 或 sleep，睡眠期间每轮 8% 概率换姿势。
+- 拖拽、菜单、喂养、切换形象都经 `interruptOwnLife` 清掉眨眼、抚摸和 life 类。
+
+### 本机回放（macOS，开发版 Electron，CDP 每 25 ms 采样可见帧）
+
+- 慢眨：idle0 → blinkHalf → blink → blinkHalf → idle0。
+- shake、earscratch、belly、chatter（与 alert 交替）、sitlick（sitDown 过渡）、tailwrap 均逐帧播放并回到 idle。
+- 抚摸：合成 13 次 mousemove 后进入 pet + purring；content → rub → content → idle。
+- 受惊：startle + 跳 → shake 循环 → idle。
+- 打盹三次：分别出现 curl、sleep、sideSleep 之一。
+- npm test：183 项全部通过。控制台无脚本错误。
+
+注意：窗口在后台被 Chromium 节流时计时器会延迟，CDP 回放需加 `--disable-renderer-backgrounding --disable-background-timer-throttling`。待测：真人在实际尺寸下目视确认 rub、belly 帧与待机帧的衔接。
