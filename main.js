@@ -219,6 +219,7 @@ function customFrames() {
     walkSeq: seq.walk,
     behaviorSeq: seq.behaviors, // 小生活行为的真帧序列
     poses: seq.poses,           // 巡视/逗猫的单帧姿态
+    napBreath: seq.napBreath,   // 睡姿呼吸两帧
     runSeq: seq.run,         // 内置猫的 8 帧跑步序列；素材不全时为 null，渲染层用走路帧兜底
     generated: true          // 内置猫是 3D 素材，不是用户原图：别套 raw-photo 的白边卡片样式
   };

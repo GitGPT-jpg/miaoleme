@@ -27,7 +27,9 @@ test('动作元数据合法：时长/帧时长/过渡时长', () => {
 test('内置序列：每帧都取到 dataURL，缺帧自动跳过', () => {
   const url = (f) => 'data:' + f;
   const seq = buildBundledSequences(url);
-  assert.equal(seq.walk.frames.length, 4, '走路四帧');
+  assert.equal(seq.walk.frames.length, 8, '走路八帧：四条腿交替');
+  const oldWalk = buildBundledSequences((f) => (f === 'act-w05.png' ? null : 'data:' + f));
+  assert.equal(oldWalk.walk.frames.length, 4, '新走路帧不全时回退旧四帧');
   assert.equal(seq.actions.roll.frames.length, 5, '打滚五帧');
   assert.equal(seq.actions.groom.frames.length, 4);
   assert.equal(seq.actions.eat.frames.length, 4);
@@ -75,7 +77,7 @@ test('行为真帧：整条序列齐备才给，缺一帧整条跳过；姿态�
   Object.values(all.behaviors).forEach((b) => {
     assert.ok(b.frames.length >= 2 && b.frameMs > 0 && b.fadeMs >= 0 && b.fadeMs <= b.frameMs);
   });
-  const noKnead2 = buildBundledSequences((f) => (f === 'act-knead-2.png' ? null : 'data:' + f));
+  const noKnead2 = buildBundledSequences((f) => (f === 'act-kn02.png' ? null : 'data:' + f));
   assert.strictEqual(noKnead2.behaviors.knead, undefined);
   assert.ok(noKnead2.behaviors.loaf);
   const noSniff = buildBundledSequences((f) => (f === POSE_FILES.sniff ? null : 'data:' + f));
@@ -85,9 +87,10 @@ test('行为真帧：整条序列齐备才给，缺一帧整条跳过；姿态�
 
 test('入睡与醒来走过渡链：settle 从坐下到趴好，rise 先睁眼再撑起；起步收步有单独姿态', () => {
   const all = buildBundledSequences((f) => 'data:' + f);
-  assert.deepStrictEqual(all.behaviors.settle.frames, ['data:act-sit-down.png', 'data:act-settle-1.png', 'data:act-settle-2.png', 'data:act-settle-3.png']);
-  assert.strictEqual(all.behaviors.rise.frames[0], 'data:act-wake-1.png');
-  assert.strictEqual(all.behaviors.yawn.frames.length, 5, '哈欠张嘴再合上');
+  assert.deepStrictEqual(all.behaviors.settle.frames, ['data:act-sit-down.png', 'data:act-settle-1.png', 'data:act-settle-2.png', 'data:act-settle-3.png', 'data:act-sl01.png']);
+  assert.strictEqual(all.behaviors.rise.frames[0], 'data:act-sl08.png', '先睁一只眼');
+  assert.strictEqual(all.behaviors.rise.frames[1], 'data:act-wake-1.png');
+  assert.ok(all.behaviors.yawn.frames.length >= 5, '哈欠张嘴再合上');
   ['groomStart', 'stepOut', 'stepIn'].forEach((k) => assert.ok(all.poses[k], k));
   const noSettle2 = buildBundledSequences((f) => (f === 'act-settle-2.png' ? null : 'data:' + f));
   assert.strictEqual(noSettle2.behaviors.settle, undefined, '缺帧就直接睡，不播半截');
@@ -106,4 +109,12 @@ test('行为与姿态素材都在仓库里，尺寸与母版画布一致、脚�
     assert.strictEqual(buf.readUInt32BE(16), 360, f + ' 宽');
     assert.ok(buf.readUInt32BE(20) >= 270 && buf.readUInt32BE(20) <= 290, f + ' 高');
   });
+});
+
+test('百帧补画：坐下起身、猎、转身成链，睡眠呼吸两帧交替，缺帧不给', () => {
+  const all = buildBundledSequences((f) => 'data:' + f);
+  ['sitdown', 'standup', 'hunt', 'leap', 'turn', 'facewash', 'sneak', 'sniff', 'brake', 'napcycle'].forEach((k) => assert.ok(all.behaviors[k], k));
+  assert.deepStrictEqual(all.napBreath, ['data:act-sl01.png', 'data:act-sl03.png']);
+  assert.strictEqual(buildBundledSequences((f) => (f === 'act-sl03.png' ? null : 'data:' + f)).napBreath, null);
+  ['pawHold', 'peek', 'oneEye', 'pawEyes', 'earFlick', 'dreamKick'].forEach((k) => assert.ok(all.poses[k], k));
 });

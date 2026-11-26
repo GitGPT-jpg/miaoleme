@@ -31,28 +31,37 @@ const ACT_CLASSES = ['act-roll', 'act-groom', 'act-eat', 'act-sleep', 'act-drink
 
 // 没有专门画帧的小动作：复用站立/动作帧，靠 CSS 动画 + 小道具把动作演出来
 const BEHAVIOR_FX = {
-  look:      { label: '咦？那边有什么…', ms: 3200, frame: 'idle' },
-  loaf:      { label: '揣手手，当一只吐司 🍞', ms: 6500, frame: 'idle2' },
-  yawn:      { label: '哈——欠~', ms: 2600, frame: 'idle2' },
-  stretch:   { label: '伸个懒腰~', ms: 3000, frame: 'idle' },
-  knead:     { label: '踩踩奶，踩踩奶~', ms: 4200, frame: 'idle' },
-  scratch:   { label: '挠挠痒~', ms: 3000, frame: 'groom' },
-  tail:      { label: '我的尾巴！别跑！', ms: 3600, frame: 'idle', prop: '〰️' },
-  pounce:    { label: '准备…扑！', ms: 2600, frame: 'idle', prop: '🐭' },
-  yarn:      { label: '毛线球是我的！', ms: 4200, frame: 'roll', prop: '🧶' },
-  butterfly: { label: '蝴蝶蝴蝶别跑~', ms: 4200, frame: 'idle', prop: '🦋' },
-  catnap:    { label: '眯一会儿…', ms: 7000, frame: 'sleep', prop: '💤' },
-  groom:     { label: '舔舔毛，保持美丽~', ms: 3600, frame: 'idle2' },
-  roll:      { label: '打个滚~', ms: 3200, frame: 'idle' },
-  eat:       { label: '吧唧吧唧 🐟', ms: 3600, frame: 'idle2', prop: '🐟' },
-  drink:     { label: '咕噜咕噜~', ms: 3000, frame: 'idle2', prop: '💧' },
-  shake:     { label: '抖一抖~', ms: 1300, frame: 'idle' },
-  earscratch:{ label: '后腿挠挠耳朵~', ms: 2600, frame: 'groom' },
-  belly:     { label: '给你看肚皮…但不许摸！', ms: 6200, frame: 'roll' },
-  chatter:   { label: '咔咔咔…窗外有鸟！', ms: 3200, frame: 'idle' },
-  sitlick:   { label: '舔舔胸口的毛~', ms: 4600, frame: 'idle2' },
-  tailwrap:  { label: '尾巴盘好，坐端正', ms: 6000, frame: 'idle2' }
+  look:      { label: '咦？那边有什么…', ms: 6400, frame: 'idle' },
+  loaf:      { label: '揣手手，当一只吐司 🍞', ms: 15000, frame: 'idle2' },
+  yawn:      { label: '哈——欠~', ms: 5600, frame: 'idle2' },
+  stretch:   { label: '伸个懒腰~', ms: 5200, frame: 'idle' },
+  knead:     { label: '踩踩奶，踩踩奶~', ms: 6400, frame: 'idle' },
+  scratch:   { label: '挠挠痒~', ms: 4200, frame: 'groom' },
+  tail:      { label: '我的尾巴！别跑！', ms: 5200, frame: 'idle', prop: '〰️' },
+  pounce:    { label: '准备…扑！', ms: 4200, frame: 'idle', prop: '🐭' },
+  yarn:      { label: '毛线球是我的！', ms: 6000, frame: 'roll', prop: '🧶' },
+  butterfly: { label: '蝴蝶蝴蝶别跑~', ms: 6000, frame: 'idle', prop: '🦋' },
+  catnap:    { label: '眯一会儿…', ms: 10000, frame: 'sleep', prop: '💤' },
+  groom:     { label: '舔舔毛，保持美丽~', ms: 8200, frame: 'idle2' },
+  roll:      { label: '打个滚~', ms: 4800, frame: 'idle' },
+  eat:       { label: '吧唧吧唧 🐟', ms: 6200, frame: 'idle2', prop: '🐟' },
+  drink:     { label: '咕噜咕噜~', ms: 6000, frame: 'idle2', prop: '💧' },
+  shake:     { label: '抖一抖~', ms: 1800, frame: 'idle' },
+  earscratch:{ label: '后腿挠挠耳朵~', ms: 3800, frame: 'groom' },
+  belly:     { label: '给你看肚皮…但不许摸！', ms: 9600, frame: 'roll' },
+  chatter:   { label: '咔咔咔…窗外有鸟！', ms: 4800, frame: 'idle' },
+  sitlick:   { label: '舔舔胸口的毛~', ms: 6400, frame: 'idle2' },
+  tailwrap:  { label: '尾巴盘好，坐端正', ms: 8000, frame: 'idle2' },
+  sneak:     { label: '压低身子，悄悄靠近…', ms: 5000, frame: 'idle' },
+  hunt:      { label: '盯——屁股扭一扭', ms: 4400, frame: 'idle' },
+  facewash:  { label: '舔舔爪，洗洗脸', ms: 7800, frame: 'idle2' },
+  sniff:     { label: '嗅嗅，这是什么味道', ms: 4800, frame: 'idle' },
+  blink:     { label: '慢慢眨眼…喜欢你', ms: 5400, frame: 'idle2' },
+  rub:       { label: '蹭蹭，这里是我的', ms: 4800, frame: 'idle' },
+  greet:     { label: '尾巴竖起来：你好呀', ms: 5200, frame: 'idle' }
 };
+// 坐着做的事：先坐下（sitdown），做完再站起来（standup），不会凭空从站姿瞬移到坐姿
+const SIT_BEHAVIORS = new Set(['loaf', 'yawn', 'tail', 'blink', 'facewash', 'groom', 'chatter', 'sitlick', 'tailwrap']);
 const BEH_CLASSES = Object.keys(BEHAVIOR_FX).map((n) => 'beh-' + n).concat('beh-seq');
 const NAP_CLASSES = ['vibe-sleeping', 'nap-twitch'];
 
@@ -267,6 +276,7 @@ function loadCustomImage() {
       runSeq: frames.runSeq || null,
       behaviorSeq: frames.behaviorSeq || {},
       poses: frames.poses || {},
+      napBreath: frames.napBreath || null,
       idleEar: frames.idleEar || null
     };
     preloadRunFrames(F.runSeq);
@@ -290,8 +300,8 @@ let idleTick = 0;
 setInterval(() => {
   if (rigOn || currentForm !== 'custom' || mode !== 'idle' || F.idle.length < 2 || attentionBusy()) return;
   idleTick = (idleTick + 1) % 2;
-  crossfadeTo(F.idle[idleTick], 1200);
-}, 4200);
+  crossfadeTo(F.idle[idleTick], 1800);
+}, 6000);
 
 function setMood(mood) {
   pet.classList.remove('mood-normal', 'mood-happy', 'mood-alert');
@@ -734,6 +744,19 @@ function stopRun() {
   if (!rigOn && currentForm === 'custom' && F.idle.length) {
     // 先淡回站立帧，等淡完再摘掉 .running：奔跑展示框比站立宽，
     // 立刻摘掉会在淡化中途把跑步帧缩一下，看着像抽一下
+    const bk = F.behaviorSeq && F.behaviorSeq.brake;
+    if (bk && zoomiesLeft <= 0 && mode === 'idle') {
+      // 刹车：前爪撑地、身子往后坐、站稳——跑完不是一下子定住的
+      const mySession = session;
+      mode = 'act';
+      setTimeout(() => { if (mode !== 'run') setRunFrame(false); }, 180);
+      playChain(mySession, bk, 'act', () => {
+        if (F.idle.length) crossfadeTo(F.idle[0], 420);
+        mode = 'idle';
+        scheduleWander();
+      });
+      return;
+    }
     crossfadeTo(F.idle[0], 320);
     setTimeout(() => { if (mode !== 'run') setRunFrame(false); }, 340);
   } else {
@@ -824,6 +847,7 @@ async function startWander() {
   if (b === 'catnap' && F.behaviorSeq && F.behaviorSeq.settle) { enterNap({ long: true }); return; }
   if (b !== 'walk' && b !== 'run' && b !== 'zoomies') {
     if (b === 'groom' && startGroom()) return;
+    if ((b === 'eat' || b === 'drink') && behaviorChain(b)) { playBehavior(b); return; }   // 低头、舔、抬头的完整链
     if (hasActionFrame(b)) { playAction(b); return; }
     if (BEHAVIOR_FX[b]) { playBehavior(b); return; }
   }
@@ -875,6 +899,17 @@ function roamPause(mySession, legs) {
   clearInterval(walkTimer); walkTimer = null;
   pet.classList.remove('walking', 'walk-slow');
   const sniff = Math.random() < 0.4;
+  const chain = beh(sniff ? 'sniff' : (Math.random() < 0.5 ? 'blink' : null));
+  if (chain) {
+    // 停下来：低头嗅完一整套，或者坐着眨两下眼，再决定下一步
+    pet.classList.add('posed');
+    playChain(mySession, chain, 'patrol', () => {
+      pet.classList.remove('posed');
+      if (Math.random() < 0.05 + 0.25 * drives.energy && !(vibeOn && vibePhaseState === 'typing')) { mode = 'idle'; startRunDash(); return; }
+      startRoam(legs);
+    });
+    return;
+  }
   const still = sniff ? pose('sniff') : pose('alert');
   if (still) crossfadeTo(still, 220);
   else if (F.idle.length) crossfadeTo(F.idle[0], 240);
@@ -963,6 +998,14 @@ function behaviorFrame(key) {
   return F.idle[0];
 }
 
+function behaviorChain(name) {
+  const B = F.behaviorSeq || {};
+  const alt = { groom: 'groom2', eat: 'eat2', drink: 'drink2' }[name];
+  const bs = (alt && B[alt]) || B[name];
+  return bs && bs.frames && bs.frames.length ? bs : null;
+}
+function chainMs(bs) { return bs ? bs.frames.length * bs.frameMs : 0; }
+
 function playBehavior(name) {
   const fx = BEHAVIOR_FX[name];
   if (!fx || currentForm !== 'custom' || mode === 'drag' || !F.idle.length) return;
@@ -974,13 +1017,31 @@ function playBehavior(name) {
   pet.classList.remove('walking', 'running', 'run-seq', 'walk-seq', ...ACT_CLASSES, ...BEH_CLASSES, ...NAP_CLASSES);
   clearProp();
   pet.classList.add('acting', 'beh-' + name);
-  const bs = F.behaviorSeq && F.behaviorSeq[name];
-  if (bs && bs.frames && bs.frames.length) {
+  const bs = behaviorChain(name);
+  const B = F.behaviorSeq || {};
+  const sit = !!(bs && SIT_BEHAVIORS.has(name) && B.sitdown && B.standup);
+  const pre = sit ? chainMs(B.sitdown) : 0;
+  const body = bs ? Math.max(fx.ms, chainMs(bs) + (bs.hold ? 400 : 0)) : fx.ms;
+  const post = sit ? chainMs(B.standup) : 0;
+  const later = (ms, fn) => {
+    const id = setTimeout(() => {
+      behSeqTimers = behSeqTimers.filter((t) => t !== id);
+      if (session === mySession && mode === 'act') fn();
+    }, ms);
+    behSeqTimers.push(id);
+  };
+  if (bs) {
     pet.classList.add('beh-seq');                         // 有真帧：动作由帧来演，CSS 只留呼吸
-    playBehaviorFrames(mySession, bs, fx.ms);
+    if (sit) {
+      playChain(mySession, B.sitdown, 'act', () => {});   // 先坐下
+      later(pre, () => playBehaviorFrames(mySession, bs, body, { noReturn: true }));
+      later(pre + body, () => playChain(mySession, B.standup, 'act', () => {}));  // 做完再站起来
+    } else {
+      playBehaviorFrames(mySession, bs, body);
+    }
   } else {
     const url = behaviorFrame(fx.frame);
-    if (url) crossfadeTo(url, 380);
+    if (url) crossfadeTo(url, 520);
   }
   if (fx.prop && petProp && !(bs && (name === 'tail' || name === 'pounce'))) {
     petProp.textContent = fx.prop;
@@ -991,15 +1052,13 @@ function playBehavior(name) {
     if (session !== mySession) return;
     setIdle();
     pet.classList.remove('beh-seq');   // 保留朝向：原地做完一件事不会突然翻个面
-    if (F.idle.length) crossfadeTo(F.idle[0], 420);
+    if (F.idle.length) crossfadeTo(F.idle[0], 600);
     if (rig) enableRig();
     scheduleWander();
-  }, fx.ms);
+  }, pre + body + post);
 }
 
-// 真帧排程：hold 型（趴下/哈欠/伸懒腰/扑）按顺序演一遍停在最后一帧，收尾前先回到起始姿态；
-// 循环型（踩奶/挠痒/扑蝴蝶）在动作时长内循环。所有回调受 session 保护，打断即失效。
-function playBehaviorFrames(mySession, bs, totalMs) {
+function playBehaviorFrames(mySession, bs, totalMs, opts) {
   const at = (ms, fn) => {
     const id = setTimeout(() => {
       behSeqTimers = behSeqTimers.filter((t) => t !== id);
@@ -1009,10 +1068,10 @@ function playBehaviorFrames(mySession, bs, totalMs) {
     behSeqTimers.push(id);
   };
   const n = bs.frames.length;
-  crossfadeTo(bs.frames[0], 300);
+  crossfadeTo(bs.frames[0], Math.max(300, bs.fadeMs || 0));
   if (bs.hold) {
     for (let i = 1; i < n; i++) at(i * bs.frameMs, () => crossfadeTo(bs.frames[i], bs.fadeMs));
-    if (n > 1 && totalMs > n * bs.frameMs + 700) at(totalMs - 650, () => crossfadeTo(bs.frames[0], 300));
+    if (!(opts && opts.noReturn) && n > 1 && totalMs > n * bs.frameMs + 900) at(totalMs - 800, () => crossfadeTo(bs.frames[0], 600));
     return;
   }
   const steps = Math.max(1, Math.floor((totalMs - 300) / bs.frameMs));
@@ -1208,6 +1267,26 @@ function patrolAtEdge(mySession, back) {
   mode = 'patrol';
   clearInterval(walkTimer); walkTimer = null;
   pet.classList.remove('walking', 'walk-slow');
+  const snc = beh('sniff'), tnc = beh('turn');
+  if (snc && tnc) {
+    // 到边上：放慢、低头嗅完一整套 → 头先回、肩胯跟上、尾巴最后收住（转身链）
+    pet.classList.add('posed');
+    playChain(mySession, snc, 'patrol', () => {
+      pet.classList.add('turn-head');
+      patrolLater(mySession, Math.round(tnc.frameMs * 2), () => pet.classList.add('turn-body'));   // 肩胯跟上
+      playChain(mySession, tnc, 'patrol', () => {
+        pet.classList.toggle('face-left');
+        pet.classList.remove('turn-head', 'turn-body', 'posed');
+        pet.classList.add('turn-tail');
+        mode = 'walk';
+        setWalkFrame(true);
+        moveLast = performance.now();
+        stepTo(back, { slowNear: 60, onArrive: () => patrolHome(mySession) });
+        patrolLater(mySession, 360, () => pet.classList.remove('turn-tail'));
+      });
+    });
+    return;
+  }
   const sn = pose('sniff');
   if (sn) crossfadeTo(sn, 240); else if (F.idle.length) crossfadeTo(F.idle[0], 260);
   pet.classList.toggle('posed', !!sn);
@@ -1241,6 +1320,25 @@ function patrolAtEdge(mySession, back) {
 
 function patrolHome(mySession) {
   if (session !== mySession) return;
+  const sdc = beh('sitdown');
+  if (sdc) {
+    // 回到窝：收步、坐下，尾巴绕过来，再慢慢放松回站姿
+    mode = 'patrol';
+    clearInterval(walkTimer); walkTimer = null;
+    pet.classList.remove('walking', 'walk-slow');
+    pet.classList.add('posed');
+    playChain(mySession, sdc, 'patrol', () => {
+      const tw = beh('tailwrap');
+      const finish = () => {
+        clearPatrol();
+        pet.classList.remove('face-left', 'posed');
+        mode = 'walk';
+        stopWander();
+      };
+      if (tw) playChain(mySession, tw, 'patrol', finish); else patrolLater(mySession, 900, finish);
+    });
+    return;
+  }
   const sd = pose('sitDown');
   if (!sd) { clearPatrol(); pet.classList.remove('face-left'); stopWander(); return; }
   // 回到窝里：先坐下，再转回原来的姿态
@@ -1296,6 +1394,19 @@ function startPounce(opts) {
   if (rigOn) disableRig();
   pet.classList.remove('walking', 'running', 'run-seq', 'walk-seq', 'acting', ...ACT_CLASSES, ...BEH_CLASSES, ...NAP_CLASSES);
   pet.classList.toggle('face-left', o.dir < 0);
+  const hu = beh('hunt'), lp = beh('leap');
+  const land = () => (o.hit ? pounceHit(mySession) : pounceMiss(mySession));
+  if (hu && lp) {
+    // 盯住 → 压低 → 屁股扭两下 → 弹出去：整套追猎链，腾空几帧硬切避免残影
+    pet.classList.add('posed', 'crouch');
+    playChain(mySession, hu, 'tease', () => {
+      pet.classList.remove('crouch');
+      pet.classList.add('pounce');
+      lp.frames.forEach((u, i) => teaseLater(mySession, i * lp.frameMs, () => { if (mode === 'tease') hardCutTo(u); }));
+      teaseLater(mySession, lp.frames.length * lp.frameMs + 60, land);
+    });
+    return;
+  }
   const cr = pose('crouch');
   if (cr) hardCutTo(cr); else if (F.idle.length) crossfadeTo(F.idle[0], 200);
   pet.classList.toggle('posed', !!cr);
@@ -1304,15 +1415,16 @@ function startPounce(opts) {
     pet.classList.remove('crouch');
     if (pose('pounce')) hardCutTo(pose('pounce'));        // 腾空：硬切，淡化会糊成残影
     pet.classList.add('pounce');
-    teaseLater(mySession, 340, () => (o.hit ? pounceHit(mySession) : pounceMiss(mySession)));
+    teaseLater(mySession, 340, land);
   });
 }
 
 function pounceMiss(mySession) {
   pet.classList.remove('pounce');
-  if (pose('pawUp')) hardCutTo(pose('pawUp'));            // 落地，扑出去的那只爪还悬着
+  const ph = pose('pawHold') || pose('pawUp');
+  if (ph) hardCutTo(ph);                                  // 落地，扑出去的那只爪还悬着
   pet.classList.add('paw-hold');                          // 扑空：那只爪在空中停一拍
-  teaseLater(mySession, 420, () => {
+  teaseLater(mySession, 700, () => {
     pet.classList.remove('paw-hold', 'face-left', 'posed');
     // 顺势抬爪洗脸，洗到一半偷偷瞄人
     if (!startGroom({ ms: groomAfterMissMs(), peekAt: 1900, silent: true })) {
@@ -1379,6 +1491,7 @@ let vibePhaseState = 'free';
 const napZzz = document.getElementById('nap-zzz');
 
 // 过渡帧：在 nap/act 等指定 mode 下逐帧淡入，打断即失效
+function beh(name) { return (name && F.behaviorSeq && F.behaviorSeq[name]) || null; }
 function playChain(mySession, bs, wantMode, done) {
   const n = bs.frames.length;
   const at = (ms, fn) => {
@@ -1412,7 +1525,31 @@ function enterNap(opts) {
   vibeEl.classList.add('vibe-sleeping');
   const poses = napPoses();
   let url = poses.length ? poses[Math.floor(Math.random() * poses.length)] : (F.idle[1] || F.idle[0]);
+  const breath = F.napBreath && F.napBreath.length > 1 ? F.napBreath : null;
+  if (breath && Math.random() < 0.7) url = breath[0];
   const asleep = () => {
+    pet.classList.add('vibe-sleeping');
+    if (breath && url === breath[0]) {
+      crossfadeTo(url, 900);
+      // 团着睡：两帧之间慢慢起伏（一吸一呼约 6 秒）；偶尔梦里抖耳朵、捂眼、蹬腿，然后回到呼吸
+      const dreams = [pose('earFlick'), pose('pawEyes'), pose('dreamKick')].filter(Boolean);
+      let bi = 0, held = 0;
+      sleepCycleTimer = setInterval(() => {
+        if (session !== mySession || mode !== 'nap') return;
+        if (held > 0) { held -= 1; if (!held) crossfadeTo(breath[bi], 1400); return; }
+        if (dreams.length && Math.random() < 0.06) {
+          crossfadeTo(dreams[Math.floor(Math.random() * dreams.length)], 700);
+          held = 1;
+          return;
+        }
+        bi = (bi + 1) % breath.length;
+        crossfadeTo(breath[bi], 1800);
+      }, 3000);
+      if (o.long) {
+        actTimer = setTimeout(() => { if (session === mySession && mode === 'nap') wakeFromNap(); }, BehaviorMath.napDurationMs(drives, Math.random));
+      }
+      return;
+    }
     pet.classList.add('vibe-sleeping');
     if (url) crossfadeTo(url, 700);
     // 睡着也不是一动不动：偶尔抖抖耳朵、蹬蹬腿；睡久了翻个身换姿势
@@ -1463,7 +1600,12 @@ function wakeFromNap() {
   if (rise && rise.frames && rise.frames.length && F.idle.length) {
     mode = 'act';
     pet.classList.add('acting', 'beh-seq');
-    playChain(mySession, rise, 'act', after);
+    // 先睁一只眼看看，确认没事才慢慢撑起来
+    const oe = pose('oneEye');
+    if (oe) {
+      crossfadeTo(oe, 700);
+      actTimer = setTimeout(() => { if (session === mySession && mode === 'act') playChain(mySession, rise, 'act', after); }, 1500);
+    } else playChain(mySession, rise, 'act', after);
   } else {
     mode = 'idle';
     if (F.idle.length) crossfadeTo(F.idle[0], 450);

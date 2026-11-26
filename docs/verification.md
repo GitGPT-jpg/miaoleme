@@ -413,3 +413,24 @@ v0.9 空闲时自己走动更多（150s 里 walk/run/patrol 约 31s），走路�
 - npm test：190 项全部通过。
 
 待测：需要真人在实际尺寸下目视确认 settle、rise 与待机帧的衔接，以及半小时空闲时入睡和醒来的节奏。
+
+## 十五、v0.13.0：百帧补画与慢节奏意向链
+
+新增 100 张中间帧，同一母版、画布和脚底基线，注册为 35 条行为链（`lib/sequences.js` 的 `behaviorSeq`）和 `napBreath` 呼吸睡姿。
+
+- 节奏：链帧 frameMs 多在 520–2600 ms，fadeMs 不超过 frameMs；待机呼吸放慢。坐姿行为先播 sitdown 链，做完播 standup 链。
+- 因果转移：`TRANSITIONS` 中 look → sneak ×3、sneak → hunt ×4、hunt → facewash ×4、walk → sniff ×3、catnap → yawn/stretch ×4。`dwellMs` 整体拉长。
+- 奔跑收尾：zoomies 结束时播 brake 链，再淡回待机。
+- 散步：中途停下时 40% 嗅闻链、其余眨眼链；到边先播 sniff 链，再 turn-head → turn-body → turn 链 → 翻转朝向 → turn-tail，回窝播 sitdown 与 tailwrap 链。
+- 逗猫：hunt 链伏低 → leap 链腾空 → 扑空时 pawHold 悬爪 700 ms → 洗脸 → 偷看。
+- 小睡：70% 用 sl01/sl03 呼吸交替（3 s 一换，1.8 s 淡化），每次 6% 概率插入抖耳、捂眼或梦中蹬腿；醒来先淡到 oneEye，1.5 s 后播 rise 链。
+
+### 本机回放（macOS，开发版 Electron，CDP 每秒采样）
+
+- 载入：behaviorSeq 35 条，walkSeq 与 runSeq 各 8 帧，napBreath 存在。
+- 散步：walk-lean → walking → walk-slow（近边）→ patrol 嗅闻 4 s → turn-head → turn-body → face-left turn-tail walking → 回窝 posed 约 5 s → idle。
+- 逗猫：crouch → paw-hold → act-groom（洗脸）。
+- 入睡 → vibe-sleeping；唤醒 → beh-seq（rise）→ beh-yawn。
+- 整轮控制台异常 0 条；npm test 193 项全部通过。
+
+待测：需要真人在实际尺寸下目视确认 turn 链与翻转后 w01 的朝向衔接，以及半小时空闲时的节奏是否「够慢」。

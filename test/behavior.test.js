@@ -119,3 +119,19 @@ test('停留时长与小睡时长：困的猫停得更久、睡得更久，且�
   assert.ok(B.napDurationMs(sleepy, () => 0) > B.napDurationMs(awake, () => 0));
   assert.ok(B.napDurationMs(awake, () => 0) >= 25000);
 });
+
+test('追猎链有前因后果：张望后更想潜行，扑完更想洗脸', () => {
+  const fresh = { drives: { energy: 0.8, sleepiness: 0.2 }, recent: [], sinceWakeMs: 10 * 60000 };
+  assert.ok(share({ ...fresh, last: 'look' }, 'sneak') > share({ ...fresh, last: 'loaf' }, 'sneak') * 2);
+  assert.ok(share({ ...fresh, last: 'hunt' }, 'facewash') > share({ ...fresh, last: 'walk' }, 'facewash') * 2);
+  assert.ok(share({ ...fresh, last: 'sneak' }, 'sneak') < share({ ...fresh, last: 'sneak' }, 'hunt'));
+});
+
+test('新行为的活动量分类与更长的停留', () => {
+  assert.strictEqual(B.activityOf('sneak'), 'active');
+  assert.strictEqual(B.activityOf('hunt'), 'active');
+  assert.strictEqual(B.activityOf('blink'), 'rest');
+  const d = { energy: 0.8, sleepiness: 0.2 };
+  assert.ok(B.dwellMs('blink', d, () => 0) >= 6000 * 0.96 - 1);
+  assert.ok(B.dwellMs('hunt', d, () => 0) >= 3000);
+});
