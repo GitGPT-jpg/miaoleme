@@ -62,6 +62,12 @@ let currentForm = 'custom';
 let displayMode = 'photo';
 let mode = 'idle';
 let session = 0;
+// 驱动值：体力和困意随做过的事慢慢变，决定下一件事（而不是每次掷骰子）
+let drives = BehaviorMath.createDrives();
+let lastBehavior = null;
+let lastDriveTick = Date.now();
+let napLong = false;              // 自己困了睡的：你停手不会把它叫醒，睡够自己醒
+let lastWakeAt = Date.now();      // 启动即算"刚醒"：不会一打开就倒头睡
 let bubbleTimer = null;
 let wanderTimer = null;
 let actTimer = null;
@@ -797,13 +803,25 @@ function scheduleWander() {
   clearTimeout(wanderTimer);
   // 写代码模式下你停手时，它更快地去过自己的小日子
   const free = vibeOn && vibePhaseState === 'free';
-  wanderTimer = setTimeout(startWander, free ? 900 + Math.random() * 1900 : 1800 + Math.random() * 3200);
+  const ms = BehaviorMath.dwellMs(lastBehavior, tickNow(), Math.random);
+  wanderTimer = setTimeout(startWander, free ? ms * 0.6 : ms);
+}
+
+function tickNow() {
+  const now = Date.now();
+  const act = mode === 'nap' ? 'sleep' : BehaviorMath.activityOf(lastBehavior);
+  drives = BehaviorMath.tickDrives(drives, now - lastDriveTick, act);
+  lastDriveTick = now;
+  return drives;
 }
 
 async function startWander() {
   if (currentForm !== 'custom' || mode !== 'idle' || (vibeOn && vibePhaseState === 'typing')) { scheduleWander(); return; }
-  const b = BehaviorMath.pickBehavior(BehaviorMath.circadianWeights(BehaviorMath.BEHAVIORS, new Date().getHours()), behaviorRecent);
+  tickNow();
+  const b = BehaviorMath.pickIntentional({ drives, last: lastBehavior, recent: behaviorRecent, sinceWakeMs: Date.now() - lastWakeAt }, Math.random, new Date().getHours());
   behaviorRecent = BehaviorMath.pushRecent(behaviorRecent, b);
+  lastBehavior = b;
+  if (b === 'catnap' && F.behaviorSeq && F.behaviorSeq.settle) { enterNap({ long: true }); return; }
   if (b !== 'walk' && b !== 'run' && b !== 'zoomies') {
     if (b === 'groom' && startGroom()) return;
     if (hasActionFrame(b)) { playAction(b); return; }
@@ -840,10 +858,16 @@ function startRoam(legs) {
   if (Math.abs(dx) < 6 && Math.abs(target.y - cur.y) < 6) { mode = 'idle'; scheduleWander(); return; }
   pet.classList.toggle('face-left', dx < 0);
   mode = 'walk';
-  setWalkFrame(true);
-  moveLast = performance.now();
   const more = legs > 1;
-  stepTo(target, more ? { onArrive: () => roamPause(mySession, legs - 1) } : undefined);
+  const go = () => {
+    if (session !== mySession || mode !== 'walk') return;
+    setWalkFrame(true);
+    moveLast = performance.now();
+    stepTo(target, more ? { onArrive: () => roamPause(mySession, legs - 1) } : undefined);
+  };
+  // 起步：先把重心移到前爪、迈出第一步，再进入走路循环
+  const out = pose('stepOut');
+  if (out) { crossfadeTo(out, 160); patrolLater(mySession, 220, go); } else go();
 }
 function roamPause(mySession, legs) {
   if (session !== mySession) return;
@@ -859,7 +883,7 @@ function roamPause(mySession, legs) {
   patrolLater(mySession, 700 + Math.random() * 900, () => {
     pet.classList.remove('sniff', 'walk-look', 'posed');
     // 偶尔看着看着就突然冲出去
-    if (Math.random() < 0.25 && !(vibeOn && vibePhaseState === 'typing')) { mode = 'idle'; startRunDash(); return; }
+    if (Math.random() < 0.05 + 0.25 * drives.energy && !(vibeOn && vibePhaseState === 'typing')) { mode = 'idle'; startRunDash(); return; }
     startRoam(legs);
   });
 }
@@ -898,11 +922,20 @@ function stepTo(target, opts) {
 }
 
 function stopWander() {
+  const wasWalking = mode === 'walk';
   if (mode === 'walk') mode = 'idle';
   clearInterval(walkTimer); walkTimer = null;
   if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
   pet.classList.remove('walking');
-  if (!rigOn && currentForm === 'custom' && F.idle.length) crossfadeTo(F.idle[0], 350);
+  const stepIn = wasWalking && !drag ? pose('stepIn') : null;
+  if (!rigOn && currentForm === 'custom' && F.idle.length) {
+    // 收步：后腿跟上、四爪落定，再站稳
+    if (stepIn) {
+      const mySession = session;
+      crossfadeTo(stepIn, 160);
+      patrolLater(mySession, 240, () => { if (mode === 'idle') crossfadeTo(F.idle[0], 300); });
+    } else crossfadeTo(F.idle[0], 350);
+  }
   if (rig && !rigOn && mode === 'idle') enableRig();
   scheduleWander();
 }
@@ -939,7 +972,6 @@ function playBehavior(name) {
   mode = 'act';
   if (rigOn) disableRig();
   pet.classList.remove('walking', 'running', 'run-seq', 'walk-seq', ...ACT_CLASSES, ...BEH_CLASSES, ...NAP_CLASSES);
-  pet.classList.toggle('face-left', Math.random() < 0.5);
   clearProp();
   pet.classList.add('acting', 'beh-' + name);
   const bs = F.behaviorSeq && F.behaviorSeq[name];
@@ -958,7 +990,7 @@ function playBehavior(name) {
   actTimer = setTimeout(() => {
     if (session !== mySession) return;
     setIdle();
-    pet.classList.remove('face-left', 'beh-seq');
+    pet.classList.remove('beh-seq');   // 保留朝向：原地做完一件事不会突然翻个面
     if (F.idle.length) crossfadeTo(F.idle[0], 420);
     if (rig) enableRig();
     scheduleWander();
@@ -1085,7 +1117,11 @@ function startGroom(opts) {
   pet.classList.add('acting', 'act-groom');
   groomLoop = true;
   groomIdx = o.startIdx || 0;
-  crossfadeTo(seq.frames[groomIdx], seq.fadeMs || 220);
+  const lift = !o.startIdx && pose('groomStart');   // 先抬起前爪，再开始舔
+  if (lift) {
+    crossfadeTo(lift, 260);
+    behSeqTimers.push(setTimeout(() => { if (session === mySession && groomLoop && !groomPaused) crossfadeTo(seq.frames[groomIdx], seq.fadeMs || 220); }, 520));
+  } else crossfadeTo(seq.frames[groomIdx], seq.fadeMs || 220);
   const total = o.ms || (8000 + Math.random() * 4000);
   let left = total;
   sleepCycleTimer = setInterval(() => {
@@ -1342,48 +1378,97 @@ window.api.onArrowReturn(() => pushArrowBack());
 let vibePhaseState = 'free';
 const napZzz = document.getElementById('nap-zzz');
 
-function enterNap() {
+// 过渡帧：在 nap/act 等指定 mode 下逐帧淡入，打断即失效
+function playChain(mySession, bs, wantMode, done) {
+  const n = bs.frames.length;
+  const at = (ms, fn) => {
+    const id = setTimeout(() => {
+      behSeqTimers = behSeqTimers.filter((t) => t !== id);
+      if (session !== mySession || mode !== wantMode) return;
+      fn();
+    }, ms);
+    behSeqTimers.push(id);
+  };
+  crossfadeTo(bs.frames[0], bs.fadeMs || 300);
+  for (let i = 1; i < n; i++) at(i * bs.frameMs, () => crossfadeTo(bs.frames[i], bs.fadeMs));
+  at(n * bs.frameMs, done);
+}
+
+// 入睡：先坐下、蜷起来、把头放下（settle），然后才睡着；long=自己困了挑的小睡，睡够自己醒
+function enterNap(opts) {
   if (currentForm !== 'custom' || mode === 'drag' || mode === 'nap' || mode === 'run') return;
-  bumpSession();
+  const o = opts || {};
+  const mySession = bumpSession();
   clearBehaviorTimers();
   interruptOwnLife();
   zoomiesLeft = 0;
   if (rigOn) disableRig();
+  tickNow();
   mode = 'nap';
-  pet.classList.remove('walking', 'running', 'run-seq', 'walk-seq', 'face-left', 'acting', ...ACT_CLASSES, ...BEH_CLASSES);
+  napLong = !!o.long;
+  lastBehavior = 'catnap';
+  pet.classList.remove('walking', 'running', 'run-seq', 'walk-seq', 'acting', ...ACT_CLASSES, ...BEH_CLASSES);
   clearProp();
-  pet.classList.add('vibe-sleeping');
   vibeEl.classList.add('vibe-sleeping');
   const poses = napPoses();
   let url = poses.length ? poses[Math.floor(Math.random() * poses.length)] : (F.idle[1] || F.idle[0]);
-  if (url) crossfadeTo(url, 600);
-  // 睡着也不是一动不动：偶尔抖抖耳朵、蹬蹬腿；睡久了翻个身换姿势
-  sleepCycleTimer = setInterval(() => {
-    if (mode !== 'nap') return;
-    if (poses.length > 1 && Math.random() < 0.08) {
-      const others = poses.filter((u) => u !== url);
-      url = others[Math.floor(Math.random() * others.length)];
-      crossfadeTo(url, 900);
-      return;
+  const asleep = () => {
+    pet.classList.add('vibe-sleeping');
+    if (url) crossfadeTo(url, 700);
+    // 睡着也不是一动不动：偶尔抖抖耳朵、蹬蹬腿；睡久了翻个身换姿势
+    sleepCycleTimer = setInterval(() => {
+      if (session !== mySession || mode !== 'nap') return;
+      if (poses.length > 1 && Math.random() < 0.08) {
+        const others = poses.filter((u) => u !== url);
+        url = others[Math.floor(Math.random() * others.length)];
+        crossfadeTo(url, 900);
+        return;
+      }
+      if (Math.random() < 0.55) return;
+      restartClass(pet, 'nap-twitch');
+    }, 2600);
+    if (o.long) {
+      actTimer = setTimeout(() => { if (session === mySession && mode === 'nap') wakeFromNap(); }, BehaviorMath.napDurationMs(drives, Math.random));
     }
-    if (Math.random() < 0.55) return;
-    restartClass(pet, 'nap-twitch');
-  }, 2600);
+  };
+  const settle = F.behaviorSeq && F.behaviorSeq.settle;
+  if (settle && settle.frames && settle.frames.length) {
+    pet.classList.add('beh-seq');
+    playChain(mySession, settle, 'nap', () => { pet.classList.remove('beh-seq'); asleep(); });
+  } else asleep();
+  if (o.long && !quiet && Math.random() < 0.4) say('困了…找个地方眯一会儿', 'normal');
 }
 
+// 醒来：先抬头睁眼、撑起前身（rise），再打哈欠或伸懒腰，最后才去做别的
 function wakeFromNap() {
   if (mode !== 'nap') return;
+  napLong = false;
+  const mySession = bumpSession();
   clearBehaviorTimers();
-  mode = 'idle';
+  tickNow();
+  drives = { energy: Math.max(drives.energy, 0.6), sleepiness: Math.min(drives.sleepiness, 0.12) };
+  lastWakeAt = Date.now();
+  lastBehavior = 'catnap';
   pet.classList.remove(...NAP_CLASSES);
   vibeEl.classList.remove('vibe-sleeping');
-  if (F.idle.length) crossfadeTo(F.idle[0], 450);
-  if (vibeOn) {
-    playBehavior(Math.random() < 0.5 ? 'yawn' : 'stretch');
-    if (!quiet && Math.random() < 0.5) say('睡醒啦~ 你歇会儿，我去玩会儿', 'happy');
+  const after = () => {
+    mode = 'idle';
+    pet.classList.remove('beh-seq');
+    const next = Math.random() < 0.5 ? 'yawn' : 'stretch';
+    lastBehavior = next;
+    playBehavior(next);
+    if (vibeOn && !quiet && Math.random() < 0.5) say('睡醒啦~ 你歇会儿，我去玩会儿', 'happy');
+  };
+  const rise = F.behaviorSeq && F.behaviorSeq.rise;
+  if (rise && rise.frames && rise.frames.length && F.idle.length) {
+    mode = 'act';
+    pet.classList.add('acting', 'beh-seq');
+    playChain(mySession, rise, 'act', after);
   } else {
-    if (rig) enableRig();
-    scheduleWander();
+    mode = 'idle';
+    if (F.idle.length) crossfadeTo(F.idle[0], 450);
+    if (!F.idle.length || !BEHAVIOR_FX.yawn) { if (rig) enableRig(); scheduleWander(); return; }
+    after();
   }
 }
 
@@ -1445,7 +1530,7 @@ function renderVibe() {
   if (ph !== vibePhaseState) {
     vibePhaseState = ph;
     if (ph === 'typing') enterNap();
-    else wakeFromNap();
+    else if (!napLong) wakeFromNap();
   } else if (ph === 'typing' && (mode === 'idle' || mode === 'walk')) {
     if (mode === 'walk') stopWander();
     enterNap();   // 动作刚做完而你还在敲：回键盘边接着睡
@@ -1478,7 +1563,7 @@ function applyVibe(on) {
   vibeMeter.reset();
   vibeParticles.textContent = '';
   vibePhaseState = 'free';
-  if (!on) wakeFromNap();
+  if (!on && !napLong) wakeFromNap();
   if (on) {
     if (mode === 'walk') stopWander();   // 原地坐好陪你写代码
     renderVibe();

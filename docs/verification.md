@@ -391,3 +391,25 @@ v0.9 空闲时自己走动更多（150s 里 walk/run/patrol 约 31s），走路�
 - npm test：183 项全部通过。控制台无脚本错误。
 
 注意：窗口在后台被 Chromium 节流时计时器会延迟，CDP 回放需加 `--disable-renderer-backgrounding --disable-background-timer-throttling`。待测：真人在实际尺寸下目视确认 rub、belly 帧与待机帧的衔接。
+
+## 十四、v0.12.0：动作有来由，过渡更顺
+
+新增 12 张过渡帧，使用同一母版、同一画布和脚底基线：settle ×3、wake-1、rise ×2、yawn-0、stretch-0、walk-5（起步）、walk-6（收步）、groom-0（抬爪）、look-0。
+
+- 内在状态：`drives` 包含 energy 和 sleepiness，按活动类型（active / calm / rest / sleep）随时间涨落。
+- 意向性选择：`pickIntentional` 综合上一行为的转移表、驱动值和钟点权重。醒来 4 分钟内 catnap 权重为 0；困意超过 0.85 且已过冷却期时直接去睡。停留时长 `dwellMs` 随活动类型和困意变化。
+- 入睡：sit-down → settle-1/2/3，每帧 900 ms，再淡入睡姿。自己困了去睡（long）时按 `napDurationMs` 睡够才醒，用户停手不会把它叫醒。
+- 醒来：wake-1 → rise-1 → rise-2，每帧 800 ms，接着打哈欠或伸懒腰，然后才去做别的。
+- 起步先显示 stepOut 160 ms 再进入走路循环；停步先显示 stepIn 再站稳。原地动作不再随机翻转朝向。
+- 所有过渡帧定时器都受 session 和 mode 保护，拖拽可以打断，不会留下残帧。
+
+### 本机回放（macOS，开发版 Electron，CDP 采样可见帧）
+
+- 入睡：前 4 s 处于 settle（beh-seq），之后才加 vibe-sleeping 进入睡姿。
+- 醒来：rise 三帧约 2.4 s → yawn → idle → walk。
+- settle 中途拖拽：mode=drag，过渡定时器清零，只剩 1 张可见帧。
+- 冷却：sleepiness 0.95、醒来 1 分钟时，500 次抽样中 catnap 出现 0 次；醒来 10 分钟时出现 500 次。
+- 散步：idle → stepOut → walk 循环；停步时 stepIn → idle。
+- npm test：190 项全部通过。
+
+待测：需要真人在实际尺寸下目视确认 settle、rise 与待机帧的衔接，以及半小时空闲时入睡和醒来的节奏。

@@ -70,3 +70,52 @@ test('新的真猫行为都在候选里，且有正权重', () => {
   const names = B.BEHAVIORS.map((b) => b.name);
   ['shake', 'earscratch', 'belly', 'chatter', 'sitlick', 'tailwrap'].forEach((n) => assert.ok(names.includes(n), n));
 });
+
+const seeded = (seed) => () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
+const share = (state, name, n = 4000) => {
+  const r = seeded(7); let k = 0;
+  for (let i = 0; i < n; i++) if (B.pickIntentional(state, r, 14) === name) k++;
+  return k / n;
+};
+
+test('驱动值：活动耗体力攒困意，睡觉回体力消困意，始终夹在 0–1', () => {
+  const d0 = B.createDrives();
+  const tired = B.tickDrives(d0, 5 * 60000, 'active');
+  assert.ok(tired.energy < d0.energy && tired.sleepiness > d0.sleepiness);
+  const slept = B.tickDrives(tired, 3 * 60000, 'sleep');
+  assert.ok(slept.energy > tired.energy && slept.sleepiness < tired.sleepiness);
+  const huge = B.tickDrives(d0, 3600000, 'active');
+  assert.ok(huge.energy >= 0 && huge.sleepiness <= 1);
+});
+
+test('刚睡醒的冷却期里绝不再选小睡，哪怕很困', () => {
+  const state = { drives: { energy: 0.3, sleepiness: 0.95 }, last: 'catnap', recent: [], sinceWakeMs: 30000 };
+  assert.strictEqual(share(state, 'catnap'), 0);
+});
+
+test('醒得够久又很困时，直接去睡', () => {
+  const state = { drives: { energy: 0.3, sleepiness: 0.9 }, last: 'look', recent: [], sinceWakeMs: 10 * 60000 };
+  assert.strictEqual(B.pickIntentional(state, () => 0.5, 14), 'catnap');
+});
+
+test('精神好时几乎不睡；走完一段更倾向张望或舔毛', () => {
+  const fresh = { drives: { energy: 0.9, sleepiness: 0.1 }, recent: [], sinceWakeMs: 10 * 60000 };
+  assert.ok(share({ ...fresh, last: 'walk' }, 'catnap') < 0.02);
+  const afterWalk = share({ ...fresh, last: 'walk' }, 'look') + share({ ...fresh, last: 'walk' }, 'groom');
+  const afterLoaf = share({ ...fresh, last: 'loaf' }, 'look') + share({ ...fresh, last: 'loaf' }, 'groom');
+  assert.ok(afterWalk > afterLoaf * 1.5, `${afterWalk} vs ${afterLoaf}`);
+});
+
+test('跑累了以后不会紧接着再跑，更可能歇着舔毛', () => {
+  const st = { drives: { energy: 0.2, sleepiness: 0.5 }, last: 'run', recent: [], sinceWakeMs: 10 * 60000 };
+  assert.ok(share(st, 'run') + share(st, 'zoomies') < 0.02);
+  assert.ok(share(st, 'groom') + share(st, 'sitlick') + share(st, 'loaf') > 0.25);
+});
+
+test('停留时长与小睡时长：困的猫停得更久、睡得更久，且注入 rand 时可复现', () => {
+  const awake = { energy: 0.9, sleepiness: 0.1 }, sleepy = { energy: 0.3, sleepiness: 0.9 };
+  assert.ok(B.dwellMs('loaf', sleepy, () => 0) > B.dwellMs('run', awake, () => 0));
+  assert.strictEqual(B.dwellMs('walk', awake, () => 0.3), B.dwellMs('walk', awake, () => 0.3));
+  assert.ok(B.napDurationMs(sleepy, () => 0) > B.napDurationMs(awake, () => 0));
+  assert.ok(B.napDurationMs(awake, () => 0) >= 25000);
+});
